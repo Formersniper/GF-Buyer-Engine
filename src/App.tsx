@@ -68,6 +68,7 @@ export default function App() {
           <LeadImportView
             onImportSuccess={handleImportSuccess}
             onProceedToProcessing={() => setActiveView('processing')}
+            onSelectLead={(lead) => handleSelectLead(lead.lead_id)}
           />
         )}
 

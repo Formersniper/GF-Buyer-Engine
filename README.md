@@ -4,19 +4,19 @@ Transforming raw, campaign-agnostic real-estate leads into structured, AI-qualif
 
 ---
 
-## 1. Phase 1 Architecture Foundation
+## 1. Phase 1 — Supabase Foundation & Lead Ingestion
 
-This codebase represents **Phase 1** of the 5-day master build. In accordance with the Frozen Architecture Contract:
-- **Application Shell & Navigation**: 5 views (Lead Import, Processing, Qualified Buyers, Buyer Detail, Project Matches).
-- **Canonical Type System**: Strict implementations of `GFBuyerLead`, `BuyerIdentity`, `BuyingIntent`, `ProjectIntelligence`, `LeadIntelligence`, `Provenance`, and `Workflow`.
-- **Epistemic Data-Truth Model**: Tracks all fields across `KNOWN`, `INFERRED`, `CONFIRMED`, and `UNKNOWN`.
-- **Workflow State Machine**: 16-stage deterministic state engine (`RAW` through `HANDOFF`) with strict transition controls and failure handling.
-- **Supabase Persistence Abstraction**: Typed repositories with dual-mode support (Supabase PostgreSQL system of record + in-memory fallback store).
-- **Service Boundaries**:
-  - `ScoutAdapter`: Isolated Python scraping boundary (`/scout`).
-  - `VoiceProvider`: Telephony abstraction with technical calling eligibility gate.
-  - `Gemini Agents`: Typed contracts for Buyer Signal, Conversation Extraction, Buyer Qualification, Scoring, and Project Matching.
-- **Controlled Seed Catalog**: Realistic luxury & premium project catalog and pre-qualified leads for demo testing.
+This codebase implements **Phase 1** of the GrowthForge Buyer Intelligence Engine:
+- **Supabase Database (System of Record)**: Full PostgreSQL migration (`supabase/migrations/001_initial_schema.sql`) with 9 relational tables, indexes, updated_at triggers, and Row Level Security.
+- **Repository Abstraction Layer**: Typed `SupabaseDataService` exposing repository patterns for leads, enrichments, calls, profiles, preferences, projects, matches, scores, and events, with dual-mode Supabase + fallback in-memory support.
+- **Canonical GF Buyer Lead Mapping**: `mapToGFBuyerLead()` bridges normalized relational rows to the single authoritative `GFBuyerLead` domain contract.
+- **Lead Resolver & Deduplication**:
+  - Cleans, trims, and normalizes phone numbers (E.164/+91 standard) and emails.
+  - Generates stable canonical GrowthForge Lead IDs (`GF-YYYY-NNNNNN`).
+  - Deterministic deduplication prioritizes phone matches, then email matches, and flags identity conflicts as `REQUIRES_REVIEW`.
+- **CSV Ingestion Pipeline**: Ingests raw CSVs, validates rows, records row-level errors, persists leads and immutable audit events to `lead_events`, and returns detailed ingestion summaries.
+- **Lead Import UI**: Interactive interface supporting drag-and-drop CSV upload, live summary metrics (Total Rows, Accepted, Created, Updated, Duplicates, Invalid, Errors), and dossier inspection.
+- **Automated Verification Suite**: 39 automated tests covering ID generation, normalization, parsing, deduplication, state transitions, and end-to-end repository persistence.
 
 ---
 

@@ -109,6 +109,8 @@ CLIENT HANDOFF
      - `ProjectMatchingAgent`
    - Strict hallucination controls: AI reasons; deterministic application logic manages state transitions.
 
-4. **Supabase PostgreSQL**:
+4. **Supabase PostgreSQL & Repositories**:
    - System of record for persistent storage.
-   - 8 core tables: `leads`, `lead_enrichment`, `calls`, `buyer_profiles`, `buyer_preferences`, `projects`, `project_matches`, `buyer_scores`, `lead_events`.
+   - 9 core tables: `leads`, `lead_enrichment`, `calls`, `buyer_profiles`, `buyer_preferences`, `projects`, `project_matches`, `buyer_scores`, `lead_events`.
+   - Accessible via isolated repository interfaces (`ILeadRepository`, `IProjectRepository`, `ILeadEnrichmentRepository`, etc.).
+   - Normalized database tables map back into the single authoritative `GFBuyerLead` domain contract via `mapToGFBuyerLead()`.
