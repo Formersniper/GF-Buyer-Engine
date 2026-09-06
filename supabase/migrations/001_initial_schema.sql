@@ -258,16 +258,48 @@ ALTER TABLE lead_events ENABLE ROW LEVEL SECURITY;
 
 -- Development MVP Policies: Allow full CRUD for anon and authenticated clients
 -- In production, these policies will restrict mutations by verified role/tenant ID.
+
+-- Table 1: leads
+DROP POLICY IF EXISTS "Allow public read access on leads" ON leads;
 CREATE POLICY "Allow public read access on leads" ON leads FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Allow public insert access on leads" ON leads;
 CREATE POLICY "Allow public insert access on leads" ON leads FOR INSERT WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow public update access on leads" ON leads;
 CREATE POLICY "Allow public update access on leads" ON leads FOR UPDATE USING (true);
+
+DROP POLICY IF EXISTS "Allow public delete access on leads" ON leads;
 CREATE POLICY "Allow public delete access on leads" ON leads FOR DELETE USING (true);
 
+-- Table 2: lead_enrichment
+DROP POLICY IF EXISTS "Allow public access on lead_enrichment" ON lead_enrichment;
 CREATE POLICY "Allow public access on lead_enrichment" ON lead_enrichment FOR ALL USING (true);
+
+-- Table 3: calls
+DROP POLICY IF EXISTS "Allow public access on calls" ON calls;
 CREATE POLICY "Allow public access on calls" ON calls FOR ALL USING (true);
+
+-- Table 4: buyer_profiles
+DROP POLICY IF EXISTS "Allow public access on buyer_profiles" ON buyer_profiles;
 CREATE POLICY "Allow public access on buyer_profiles" ON buyer_profiles FOR ALL USING (true);
+
+-- Table 5: buyer_preferences
+DROP POLICY IF EXISTS "Allow public access on buyer_preferences" ON buyer_preferences;
 CREATE POLICY "Allow public access on buyer_preferences" ON buyer_preferences FOR ALL USING (true);
+
+-- Table 6: projects
+DROP POLICY IF EXISTS "Allow public access on projects" ON projects;
 CREATE POLICY "Allow public access on projects" ON projects FOR ALL USING (true);
+
+-- Table 7: project_matches
+DROP POLICY IF EXISTS "Allow public access on project_matches" ON project_matches;
 CREATE POLICY "Allow public access on project_matches" ON project_matches FOR ALL USING (true);
+
+-- Table 8: buyer_scores
+DROP POLICY IF EXISTS "Allow public access on buyer_scores" ON buyer_scores;
 CREATE POLICY "Allow public access on buyer_scores" ON buyer_scores FOR ALL USING (true);
+
+-- Table 9: lead_events
+DROP POLICY IF EXISTS "Allow public access on lead_events" ON lead_events;
 CREATE POLICY "Allow public access on lead_events" ON lead_events FOR ALL USING (true);
