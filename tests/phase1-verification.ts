@@ -179,6 +179,15 @@ Ananya Birla,+91 98201 55667,ananya.b@adityabirla.com,Repeat Web Form`;
   assert(dupImportResult.duplicates === 1, 'Correctly detected duplicate on second ingestion');
   assert(dupImportResult.created === 0, 'Zero new records created for duplicate');
 
+  // Test 9: Persistence Round-Trip Diagnostic Verification
+  console.log('\n--- 9. Persistence Round-Trip Diagnostic Verification ---');
+  const roundTripResult = await supabaseDataService.verifyPersistenceRoundTrip();
+  assert(roundTripResult.success, 'Persistence round-trip executed successfully');
+  assert(roundTripResult.insertedId !== '', 'Created diagnostic lead in persistence layer');
+  assert(roundTripResult.readBackMatched, 'Read-back matched persisted lead identity');
+  assert(roundTripResult.auditEventLogged, 'Audit event was verified in event repository');
+  assert(roundTripResult.deletedSuccessfully, 'Cleaned up diagnostic record with zero database pollution');
+
   console.log('\n======================================================');
   console.log(`TEST SUMMARY: ${passedCount} PASSED, ${failedCount} FAILED`);
   console.log('======================================================\n');

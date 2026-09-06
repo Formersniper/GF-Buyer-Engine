@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Upload,
   FileText,
@@ -10,15 +10,38 @@ import {
   RefreshCw,
   Copy,
   AlertTriangle,
+  Server,
+  Activity,
+  ShieldCheck,
+  Zap,
 } from 'lucide-react';
 import { ingestCSVLeads, ImportSummary } from '../../app/services/leads/csvIngestion';
 import { supabaseDataService } from '../../app/services/supabase/repositories';
 import { GFBuyerLead } from '../../app/schemas/buyerLead';
+import {
+  checkPersistenceHealth,
+  PersistenceHealthStatus,
+} from '../../app/services/supabase/client';
 
 interface LeadImportViewProps {
   onImportSuccess: (importedLeads: GFBuyerLead[]) => void;
   onProceedToProcessing: () => void;
   onSelectLead?: (lead: GFBuyerLead) => void;
+}
+
+interface DiagnosticResult {
+  running: boolean;
+  testedAt?: string;
+  result?: {
+    success: boolean;
+    isLiveSupabase: boolean;
+    leadId: string;
+    insertedId: string;
+    readBackMatched: boolean;
+    auditEventLogged: boolean;
+    deletedSuccessfully: boolean;
+    error?: string;
+  };
 }
 
 const SAMPLE_CSV = `name,phone,email,source,source_reference
@@ -39,10 +62,69 @@ export const LeadImportView: React.FC<LeadImportViewProps> = ({
   const [isProcessing, setIsProcessing] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [activeTab, setActiveTab] = useState<'leads' | 'errors'>('leads');
+  const [healthStatus, setHealthStatus] = useState<PersistenceHealthStatus | null>(null);
+  const [isCheckingHealth, setIsCheckingHealth] = useState(false);
+  const [diagnostic, setDiagnostic] = useState<DiagnosticResult | null>(null);
+  const [runtimeError, setRuntimeError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const refreshHealth = async () => {
+    setIsCheckingHealth(true);
+    try {
+      const status = await checkPersistenceHealth();
+      setHealthStatus(status);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to check health';
+      setHealthStatus({
+        mode: 'DISCONNECTED',
+        displayName: 'Supabase Error',
+        urlHost: null,
+        isLive: false,
+        message: msg,
+        lastChecked: new Date().toISOString(),
+      });
+    } finally {
+      setIsCheckingHealth(false);
+    }
+  };
+
+  useEffect(() => {
+    refreshHealth();
+  }, []);
+
+  const runDiagnosticTest = async () => {
+    setDiagnostic({ running: true });
+    try {
+      const result = await supabaseDataService.verifyPersistenceRoundTrip();
+      setDiagnostic({
+        running: false,
+        testedAt: new Date().toLocaleTimeString(),
+        result,
+      });
+      // Also refresh health
+      await refreshHealth();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Diagnostic failed';
+      setDiagnostic({
+        running: false,
+        testedAt: new Date().toLocaleTimeString(),
+        result: {
+          success: false,
+          isLiveSupabase: false,
+          leadId: '',
+          insertedId: '',
+          readBackMatched: false,
+          auditEventLogged: false,
+          deletedSuccessfully: false,
+          error: msg,
+        },
+      });
+    }
+  };
 
   const processCSVText = async (text: string) => {
     setIsProcessing(true);
+    setRuntimeError(null);
     try {
       setCsvContent(text);
       const summary = await ingestCSVLeads(text);
@@ -57,8 +139,11 @@ export const LeadImportView: React.FC<LeadImportViewProps> = ({
 
       setImportedGFLeads(canonicalLeads);
       onImportSuccess(canonicalLeads);
-    } catch (err) {
+      await refreshHealth();
+    } catch (err: unknown) {
       console.error('CSV Ingestion failed:', err);
+      const msg = err instanceof Error ? err.message : 'CSV Ingestion failed';
+      setRuntimeError(msg);
     } finally {
       setIsProcessing(false);
     }
@@ -97,26 +182,145 @@ export const LeadImportView: React.FC<LeadImportViewProps> = ({
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
       {/* Header & Architecture Context */}
-      <div className="space-y-2">
-        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
-          <Database className="w-3.5 h-3.5 text-indigo-600" />
-          <span className="text-[10px] font-bold uppercase tracking-widest">
-            Phase 1: Supabase Foundation & Lead Ingestion
-          </span>
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
+            <Database className="w-3.5 h-3.5 text-indigo-600" />
+            <span className="text-[10px] font-bold uppercase tracking-widest">
+              Phase 1: Supabase Foundation & Lead Ingestion
+            </span>
+          </div>
+
+          {/* Active Backend Persistence Badge */}
+          <div className="flex items-center gap-2">
+            {healthStatus?.mode === 'LIVE_SUPABASE' ? (
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-300 text-xs font-semibold shadow-xs">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
+                <span>Live Supabase PostgreSQL</span>
+                {healthStatus.urlHost && (
+                  <span className="font-mono text-[11px] text-emerald-600 border-l border-emerald-200 pl-2">
+                    {healthStatus.urlHost}
+                  </span>
+                )}
+                {healthStatus.latencyMs !== undefined && (
+                  <span className="text-[10px] text-emerald-600">({healthStatus.latencyMs}ms)</span>
+                )}
+              </div>
+            ) : healthStatus?.mode === 'IN_MEMORY' ? (
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-300 text-xs font-semibold shadow-xs">
+                <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0"></span>
+                <span>Local Development Store (In-Memory Fallback)</span>
+              </div>
+            ) : (
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-rose-50 text-rose-800 border border-rose-300 text-xs font-semibold shadow-xs">
+                <span className="w-2 h-2 rounded-full bg-rose-500 shrink-0"></span>
+                <span>Supabase Disconnected / Error</span>
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={refreshHealth}
+              disabled={isCheckingHealth}
+              title="Refresh database connection health"
+              className="p-1.5 rounded-md text-slate-500 hover:text-slate-800 hover:bg-slate-200/60 border border-slate-200 bg-white transition-colors cursor-pointer"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isCheckingHealth ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
         </div>
+
         <h2 className="text-2xl font-bold tracking-tight text-slate-900">
           Lead Intake & Resolver
         </h2>
         <p className="text-sm text-slate-600 max-w-3xl leading-relaxed">
-          Ingests raw CSV records directly into the Supabase database. The deterministic
-          <span className="font-semibold text-slate-800"> Lead Resolver</span> trims inputs, validates
-          email/phone formats, detects duplicates on phone/email priorities, generates canonical
+          Ingests raw CSV records with deterministic deduplication and pipeline resolution. The
+          <span className="font-semibold text-slate-800"> Lead Resolver</span> trims inputs, normalizes
+          E.164 phone and lowercase email formats, checks duplicate priority, generates canonical
           <code className="bg-slate-100 px-1 py-0.5 rounded text-slate-800 font-mono text-xs ml-1">
             GF-YYYY-NNNNNN
           </code>{' '}
-          IDs, and writes an immutable audit trail to <code className="bg-slate-100 px-1 py-0.5 rounded text-slate-800 font-mono text-xs">lead_events</code>.
+          IDs, and logs an immutable audit event to <code className="bg-slate-100 px-1 py-0.5 rounded text-slate-800 font-mono text-xs">lead_events</code>.
         </p>
       </div>
+
+      {/* Backend Persistence Diagnostics Bar */}
+      <div className="bg-slate-900 text-white rounded-lg p-4 shadow-sm border border-slate-800 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <Server className="w-4 h-4 text-indigo-400" />
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-300">
+              Persistence Diagnostics & Health Check
+            </span>
+          </div>
+
+          <button
+            type="button"
+            onClick={runDiagnosticTest}
+            disabled={diagnostic?.running}
+            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-md text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
+          >
+            {diagnostic?.running ? (
+              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Zap className="w-3.5 h-3.5" />
+            )}
+            <span>{diagnostic?.running ? 'Verifying Round-Trip...' : 'Run Round-Trip Verification'}</span>
+          </button>
+        </div>
+
+        <div className="text-xs text-slate-300 grid grid-cols-1 md:grid-cols-2 gap-2 pt-2 border-t border-slate-800">
+          <div>
+            <span className="text-slate-400">Status: </span>
+            <span className={healthStatus?.isLive ? 'text-emerald-400 font-semibold' : 'text-amber-400 font-semibold'}>
+              {healthStatus?.message || 'Checking backend status...'}
+            </span>
+          </div>
+          <div className="text-slate-400 md:text-right">
+            <span>Target Host: </span>
+            <span className="font-mono text-slate-200">{healthStatus?.urlHost || 'None (Local Map Store)'}</span>
+          </div>
+        </div>
+
+        {/* Diagnostic Results Card */}
+        {diagnostic?.result && (
+          <div
+            className={`mt-2 p-3 rounded border text-xs font-mono transition-all ${
+              diagnostic.result.success
+                ? 'bg-slate-800/80 border-emerald-500/40 text-emerald-300'
+                : 'bg-rose-950/40 border-rose-500/40 text-rose-300'
+            }`}
+          >
+            <div className="flex items-center justify-between font-bold mb-1">
+              <span>
+                {diagnostic.result.success ? '✓ PERSISTENCE ROUND-TRIP VERIFIED' : '✗ PERSISTENCE VERIFICATION FAILED'}
+              </span>
+              <span className="text-[10px] text-slate-400">Tested at {diagnostic.testedAt}</span>
+            </div>
+            <div className="space-y-0.5 text-[11px]">
+              <div>• Mode: {diagnostic.result.isLiveSupabase ? 'Live Supabase' : 'Local Development Store'}</div>
+              <div>• Lead ID Created: {diagnostic.result.leadId}</div>
+              <div>• Read-Back Integrity: {diagnostic.result.readBackMatched ? 'VERIFIED MATCH' : 'MISMATCH'}</div>
+              <div>• Audit Event Appended: {diagnostic.result.auditEventLogged ? 'VERIFIED' : 'FAILED'}</div>
+              <div>• Cleanup Delete: {diagnostic.result.deletedSuccessfully ? 'VERIFIED REMOVED' : 'FAILED'}</div>
+              {diagnostic.result.error && (
+                <div className="text-rose-400 font-semibold mt-1">• Error: {diagnostic.result.error}</div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Runtime Error Banner */}
+      {runtimeError && (
+        <div className="p-4 rounded-lg bg-rose-50 border border-rose-300 text-rose-800 text-sm flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <div className="font-bold">Database Operation Error</div>
+            <div className="font-mono text-xs text-rose-900">{runtimeError}</div>
+          </div>
+        </div>
+      )}
 
       {/* Upload Zone */}
       <div className="bg-white border border-slate-200 rounded-lg p-6 shadow-xs space-y-6">
@@ -150,7 +354,7 @@ export const LeadImportView: React.FC<LeadImportViewProps> = ({
             )}
           </div>
           <div className="text-sm font-semibold text-slate-900 mb-1">
-            {isProcessing ? 'Persisting Leads to Supabase...' : 'Choose CSV file or drag and drop here'}
+            {isProcessing ? 'Persisting Leads to Database...' : 'Choose CSV file or drag and drop here'}
           </div>
           <p className="text-xs text-slate-500 mb-3">
             Minimum required columns: <code className="font-mono text-slate-700 font-semibold">name</code>,{' '}
@@ -261,9 +465,24 @@ export const LeadImportView: React.FC<LeadImportViewProps> = ({
                 )}
               </div>
 
-              <div className="flex items-center gap-2 text-xs text-slate-600 font-mono">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                <span>Supabase PostgreSQL Synced</span>
+              {/* Dynamic Persistence Status indicator */}
+              <div className="flex items-center gap-2 text-xs font-mono">
+                {healthStatus?.mode === 'LIVE_SUPABASE' ? (
+                  <div className="flex items-center gap-1.5 text-emerald-700 font-semibold">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    <span>Supabase PostgreSQL Synced</span>
+                  </div>
+                ) : healthStatus?.mode === 'IN_MEMORY' ? (
+                  <div className="flex items-center gap-1.5 text-amber-700 font-semibold">
+                    <AlertCircle className="w-4 h-4 text-amber-600" />
+                    <span>Local Development Store (Fallback)</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5 text-rose-700 font-semibold">
+                    <AlertTriangle className="w-4 h-4 text-rose-600" />
+                    <span>Supabase Disconnected</span>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -354,3 +573,4 @@ export const LeadImportView: React.FC<LeadImportViewProps> = ({
     </div>
   );
 };
+

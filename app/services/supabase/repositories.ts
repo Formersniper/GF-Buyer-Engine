@@ -246,10 +246,15 @@ class SupabaseDataService {
 
       if (client) {
         const { data, error } = await client.from('leads').insert(record).select().single();
-        if (!error && data) {
-          this.leadsStore.set(data.id, data);
-          return data;
+        if (error) {
+          console.error('[Supabase Persistence Error] Failed to insert lead:', error);
+          throw new Error(`Supabase insert failed on public.leads: ${error.message} (code: ${error.code || 'UNKNOWN'})`);
         }
+        if (!data) {
+          throw new Error('Supabase insert failed on public.leads: No row returned after insert.');
+        }
+        this.leadsStore.set(data.id, data);
+        return data;
       }
 
       this.leadsStore.set(record.id, record);
@@ -259,8 +264,16 @@ class SupabaseDataService {
     getLead: async (id: string) => {
       const client = getSupabaseClient();
       if (client) {
-        const { data, error } = await client.from('leads').select('*').eq('id', id).single();
-        if (!error && data) return data;
+        const { data, error } = await client.from('leads').select('*').eq('id', id).maybeSingle();
+        if (error) {
+          console.error('[Supabase Query Error] Failed to get lead by id:', error);
+          throw new Error(`Supabase query failed on public.leads: ${error.message}`);
+        }
+        if (data) {
+          this.leadsStore.set(data.id, data);
+          return data;
+        }
+        return null;
       }
       return this.leadsStore.get(id) || null;
     },
@@ -268,8 +281,16 @@ class SupabaseDataService {
     getLeadByLeadId: async (leadId: string) => {
       const client = getSupabaseClient();
       if (client) {
-        const { data, error } = await client.from('leads').select('*').eq('lead_id', leadId).single();
-        if (!error && data) return data;
+        const { data, error } = await client.from('leads').select('*').eq('lead_id', leadId).maybeSingle();
+        if (error) {
+          console.error('[Supabase Query Error] Failed to get lead by lead_id:', error);
+          throw new Error(`Supabase query failed on public.leads: ${error.message}`);
+        }
+        if (data) {
+          this.leadsStore.set(data.id, data);
+          return data;
+        }
+        return null;
       }
       for (const lead of this.leadsStore.values()) {
         if (lead.lead_id === leadId) return lead;
@@ -288,7 +309,11 @@ class SupabaseDataService {
           .eq('id', id)
           .select()
           .single();
-        if (!error && data) {
+        if (error) {
+          console.error('[Supabase Update Error] Failed to update lead:', error);
+          throw new Error(`Supabase update failed on public.leads: ${error.message}`);
+        }
+        if (data) {
           this.leadsStore.set(data.id, data);
           return data;
         }
@@ -318,7 +343,16 @@ class SupabaseDataService {
           query = query.limit(filter.limit);
         }
         const { data, error } = await query;
-        if (!error && data) return data;
+        if (error) {
+          console.error('[Supabase Query Error] Failed to list leads:', error);
+          throw new Error(`Supabase list query failed on public.leads: ${error.message}`);
+        }
+        if (data) {
+          for (const item of data) {
+            this.leadsStore.set(item.id, item);
+          }
+          return data;
+        }
       }
 
       let all = Array.from(this.leadsStore.values()).sort(
@@ -336,7 +370,11 @@ class SupabaseDataService {
     deleteLead: async (id: string) => {
       const client = getSupabaseClient();
       if (client) {
-        await client.from('leads').delete().eq('id', id);
+        const { error } = await client.from('leads').delete().eq('id', id);
+        if (error) {
+          console.error('[Supabase Delete Error] Failed to delete lead:', error);
+          throw new Error(`Supabase delete failed on public.leads: ${error.message}`);
+        }
       }
       return this.leadsStore.delete(id);
     },
@@ -367,7 +405,11 @@ class SupabaseDataService {
 
       if (client) {
         const { data, error } = await client.from('lead_enrichment').insert(record).select().single();
-        if (!error && data) return data;
+        if (error) {
+          console.error('[Supabase Insert Error] lead_enrichment:', error);
+          throw new Error(`Supabase insert failed on lead_enrichment: ${error.message}`);
+        }
+        if (data) return data;
       }
 
       const list = this.enrichmentStore.get(record.lead_id) || [];
@@ -380,7 +422,11 @@ class SupabaseDataService {
       const client = getSupabaseClient();
       if (client) {
         const { data, error } = await client.from('lead_enrichment').select('*').eq('lead_id', leadId);
-        if (!error && data) return data;
+        if (error) {
+          console.error('[Supabase Query Error] lead_enrichment:', error);
+          throw new Error(`Supabase query failed on lead_enrichment: ${error.message}`);
+        }
+        if (data) return data;
       }
       return this.enrichmentStore.get(leadId) || [];
     },
@@ -411,7 +457,11 @@ class SupabaseDataService {
 
       if (client) {
         const { data, error } = await client.from('calls').insert(record).select().single();
-        if (!error && data) {
+        if (error) {
+          console.error('[Supabase Insert Error] calls:', error);
+          throw new Error(`Supabase insert failed on calls: ${error.message}`);
+        }
+        if (data) {
           this.callsStore.set(data.id, data);
           return data;
         }
@@ -424,8 +474,12 @@ class SupabaseDataService {
     getCall: async (id: string) => {
       const client = getSupabaseClient();
       if (client) {
-        const { data, error } = await client.from('calls').select('*').eq('id', id).single();
-        if (!error && data) return data;
+        const { data, error } = await client.from('calls').select('*').eq('id', id).maybeSingle();
+        if (error) {
+          console.error('[Supabase Query Error] calls:', error);
+          throw new Error(`Supabase query failed on calls: ${error.message}`);
+        }
+        if (data) return data;
       }
       return this.callsStore.get(id) || null;
     },
@@ -434,7 +488,11 @@ class SupabaseDataService {
       const client = getSupabaseClient();
       if (client) {
         const { data, error } = await client.from('calls').select('*').eq('lead_id', leadId);
-        if (!error && data) return data;
+        if (error) {
+          console.error('[Supabase Query Error] calls:', error);
+          throw new Error(`Supabase query failed on calls: ${error.message}`);
+        }
+        if (data) return data;
       }
       return Array.from(this.callsStore.values()).filter((c) => c.lead_id === leadId);
     },
@@ -443,7 +501,11 @@ class SupabaseDataService {
       const client = getSupabaseClient();
       if (client) {
         const { data, error } = await client.from('calls').update(updates).eq('id', id).select().single();
-        if (!error && data) {
+        if (error) {
+          console.error('[Supabase Update Error] calls:', error);
+          throw new Error(`Supabase update failed on calls: ${error.message}`);
+        }
+        if (data) {
           this.callsStore.set(data.id, data);
           return data;
         }
@@ -494,7 +556,11 @@ class SupabaseDataService {
           .upsert(record, { onConflict: 'lead_id' })
           .select()
           .single();
-        if (!error && data) {
+        if (error) {
+          console.error('[Supabase Upsert Error] buyer_profiles:', error);
+          throw new Error(`Supabase upsert failed on buyer_profiles: ${error.message}`);
+        }
+        if (data) {
           this.buyerProfilesStore.set(data.lead_id, data);
           return data;
         }
@@ -507,8 +573,12 @@ class SupabaseDataService {
     getBuyerProfile: async (leadId: string) => {
       const client = getSupabaseClient();
       if (client) {
-        const { data, error } = await client.from('buyer_profiles').select('*').eq('lead_id', leadId).single();
-        if (!error && data) return data;
+        const { data, error } = await client.from('buyer_profiles').select('*').eq('lead_id', leadId).maybeSingle();
+        if (error) {
+          console.error('[Supabase Query Error] buyer_profiles:', error);
+          throw new Error(`Supabase query failed on buyer_profiles: ${error.message}`);
+        }
+        if (data) return data;
       }
       return this.buyerProfilesStore.get(leadId) || null;
     },
@@ -534,7 +604,11 @@ class SupabaseDataService {
 
       if (client) {
         const { data, error } = await client.from('buyer_preferences').insert(record).select().single();
-        if (!error && data) return data;
+        if (error) {
+          console.error('[Supabase Insert Error] buyer_preferences:', error);
+          throw new Error(`Supabase insert failed on buyer_preferences: ${error.message}`);
+        }
+        if (data) return data;
       }
 
       const list = this.buyerPreferencesStore.get(record.lead_id) || [];
@@ -547,7 +621,11 @@ class SupabaseDataService {
       const client = getSupabaseClient();
       if (client) {
         const { data, error } = await client.from('buyer_preferences').select('*').eq('lead_id', leadId);
-        if (!error && data) return data;
+        if (error) {
+          console.error('[Supabase Query Error] buyer_preferences:', error);
+          throw new Error(`Supabase query failed on buyer_preferences: ${error.message}`);
+        }
+        if (data) return data;
       }
       return this.buyerPreferencesStore.get(leadId) || [];
     },
@@ -583,7 +661,11 @@ class SupabaseDataService {
 
       if (client) {
         const { data, error } = await client.from('projects').insert(record).select().single();
-        if (!error && data) {
+        if (error) {
+          console.error('[Supabase Insert Error] projects:', error);
+          throw new Error(`Supabase insert failed on projects: ${error.message}`);
+        }
+        if (data) {
           this.projectsStore.set(data.id, data);
           return data;
         }
@@ -596,8 +678,12 @@ class SupabaseDataService {
     getProject: async (id: string) => {
       const client = getSupabaseClient();
       if (client) {
-        const { data, error } = await client.from('projects').select('*').eq('id', id).single();
-        if (!error && data) return data;
+        const { data, error } = await client.from('projects').select('*').eq('id', id).maybeSingle();
+        if (error) {
+          console.error('[Supabase Query Error] projects:', error);
+          throw new Error(`Supabase query failed on projects: ${error.message}`);
+        }
+        if (data) return data;
       }
       return this.projectsStore.get(id) || null;
     },
@@ -605,8 +691,12 @@ class SupabaseDataService {
     getProjectByCode: async (projectCode: string) => {
       const client = getSupabaseClient();
       if (client) {
-        const { data, error } = await client.from('projects').select('*').eq('project_code', projectCode).single();
-        if (!error && data) return data;
+        const { data, error } = await client.from('projects').select('*').eq('project_code', projectCode).maybeSingle();
+        if (error) {
+          console.error('[Supabase Query Error] projects:', error);
+          throw new Error(`Supabase query failed on projects: ${error.message}`);
+        }
+        if (data) return data;
       }
       for (const p of this.projectsStore.values()) {
         if (p.project_code === projectCode) return p;
@@ -622,7 +712,11 @@ class SupabaseDataService {
         if (filter?.status) query = query.eq('status', filter.status);
         if (filter?.limit) query = query.limit(filter.limit);
         const { data, error } = await query;
-        if (!error && data) return data;
+        if (error) {
+          console.error('[Supabase Query Error] projects:', error);
+          throw new Error(`Supabase query failed on projects: ${error.message}`);
+        }
+        if (data) return data;
       }
 
       let all = Array.from(this.projectsStore.values());
@@ -667,7 +761,11 @@ class SupabaseDataService {
           .upsert(record, { onConflict: 'lead_id,project_id' })
           .select()
           .single();
-        if (!error && data) return data;
+        if (error) {
+          console.error('[Supabase Upsert Error] project_matches:', error);
+          throw new Error(`Supabase upsert failed on project_matches: ${error.message}`);
+        }
+        if (data) return data;
       }
 
       const list = this.projectMatchesStore.get(record.lead_id) || [];
@@ -681,7 +779,11 @@ class SupabaseDataService {
       const client = getSupabaseClient();
       if (client) {
         const { data, error } = await client.from('project_matches').select('*').eq('lead_id', leadId);
-        if (!error && data) return data;
+        if (error) {
+          console.error('[Supabase Query Error] project_matches:', error);
+          throw new Error(`Supabase query failed on project_matches: ${error.message}`);
+        }
+        if (data) return data;
       }
       return this.projectMatchesStore.get(leadId) || [];
     },
@@ -710,7 +812,11 @@ class SupabaseDataService {
 
       if (client) {
         const { data, error } = await client.from('buyer_scores').insert(record).select().single();
-        if (!error && data) return data;
+        if (error) {
+          console.error('[Supabase Insert Error] buyer_scores:', error);
+          throw new Error(`Supabase insert failed on buyer_scores: ${error.message}`);
+        }
+        if (data) return data;
       }
 
       const list = this.buyerScoresStore.get(record.lead_id) || [];
@@ -728,8 +834,12 @@ class SupabaseDataService {
           .eq('lead_id', leadId)
           .order('created_at', { ascending: false })
           .limit(1)
-          .single();
-        if (!error && data) return data;
+          .maybeSingle();
+        if (error) {
+          console.error('[Supabase Query Error] buyer_scores:', error);
+          throw new Error(`Supabase query failed on buyer_scores: ${error.message}`);
+        }
+        if (data) return data;
       }
 
       const list = this.buyerScoresStore.get(leadId) || [];
@@ -754,7 +864,11 @@ class SupabaseDataService {
 
       if (client) {
         const { data, error } = await client.from('lead_events').insert(record).select().single();
-        if (!error && data) return data;
+        if (error) {
+          console.error('[Supabase Insert Error] lead_events:', error);
+          throw new Error(`Supabase insert failed on lead_events: ${error.message}`);
+        }
+        if (data) return data;
       }
 
       const list = this.leadEventsStore.get(record.lead_id) || [];
@@ -771,11 +885,89 @@ class SupabaseDataService {
           .select('*')
           .eq('lead_id', leadId)
           .order('created_at', { ascending: true });
-        if (!error && data) return data;
+        if (error) {
+          console.error('[Supabase Query Error] lead_events:', error);
+          throw new Error(`Supabase query failed on lead_events: ${error.message}`);
+        }
+        if (data) return data;
       }
       return this.leadEventsStore.get(leadId) || [];
     },
   };
+
+  // --- Persistence Verification & Round-Trip Diagnostic (Section 12) ---
+  public async verifyPersistenceRoundTrip(customLeadId?: string): Promise<{
+    success: boolean;
+    isLiveSupabase: boolean;
+    leadId: string;
+    insertedId: string;
+    readBackMatched: boolean;
+    auditEventLogged: boolean;
+    deletedSuccessfully: boolean;
+    error?: string;
+  }> {
+    const testLeadId = customLeadId || `GF-DIAG-${Date.now()}`;
+    const client = getSupabaseClient();
+    const isLiveSupabase = client !== null;
+
+    try {
+      // 1. Insert test lead
+      const inserted = await this.leads.createLead({
+        lead_id: testLeadId,
+        name: 'Diagnostic Test Lead',
+        phone: '+919999988888',
+        email: 'diagnostic.test@growthforge.ai',
+        source: 'DIAGNOSTIC_VERIFICATION',
+        source_reference: null,
+        status: 'RAW',
+      });
+
+      // 2. Read back lead by lead_id
+      const readBack = await this.leads.getLeadByLeadId(testLeadId);
+      if (!readBack || readBack.id !== inserted.id) {
+        throw new Error(`Read-back verification failed: lead ${testLeadId} not found after creation.`);
+      }
+
+      // 3. Append test audit event
+      const event = await this.leadEvents.appendLeadEvent({
+        lead_id: inserted.id,
+        event_type: 'PERSISTENCE_DIAGNOSTIC_TEST',
+        event_data: { test_run_at: new Date().toISOString() },
+      });
+
+      const events = await this.leadEvents.getLeadEvents(inserted.id);
+      const auditEventLogged = events.some((e) => e.id === event.id);
+
+      // 4. Delete test lead to keep database clean
+      const deletedSuccessfully = await this.leads.deleteLead(inserted.id);
+      const postDeleteCheck = await this.leads.getLead(inserted.id);
+      if (postDeleteCheck !== null) {
+        throw new Error(`Delete verification failed: lead ${inserted.id} still exists after deletion.`);
+      }
+
+      return {
+        success: true,
+        isLiveSupabase,
+        leadId: testLeadId,
+        insertedId: inserted.id,
+        readBackMatched: true,
+        auditEventLogged,
+        deletedSuccessfully: true,
+      };
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : 'Unknown persistence round-trip error';
+      return {
+        success: false,
+        isLiveSupabase,
+        leadId: testLeadId,
+        insertedId: '',
+        readBackMatched: false,
+        auditEventLogged: false,
+        deletedSuccessfully: false,
+        error: errorMsg,
+      };
+    }
+  }
 
   // --- Canonical GF Buyer Lead Mapper (Section 8) ---
   public async mapToGFBuyerLead(leadIdOrLeadUUID: string): Promise<GFBuyerLead | null> {
