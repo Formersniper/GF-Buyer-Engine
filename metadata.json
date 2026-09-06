@@ -1,0 +1,7 @@
+{
+  "name": "GrowthForge Buyer Intelligence Engine",
+  "description": "Transform raw real-estate leads into structured, AI-qualified property buyers and match them with real-estate projects.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
