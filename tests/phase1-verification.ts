@@ -144,6 +144,14 @@ async function runAllTests() {
 
   // Test 7: Supabase Ingestion & Canonical GF Buyer Lead Mapping
   console.log('\n--- 7. End-to-End CSV Ingestion & Supabase Persistence ---');
+  // Clean up any previous test runs for phone numbers to ensure test idempotency
+  const existingLeads = await supabaseDataService.leads.listLeads();
+  for (const l of existingLeads) {
+    if (l.phone === '+919820155667' || l.phone === '+919811044332') {
+      await supabaseDataService.leads.deleteLead(l.id);
+    }
+  }
+
   const sampleCSVContent = `name,phone,email,source,source_reference
 Ananya Birla,+91 98201 55667,ananya.b@adityabirla.com,Forbes Inquiry,CAMP_UB_01
 Vikramaditya Oberoi,98110 44332,v.oberoi@luxuryhotels.in,HNI Brokerage,REF_EXEC_02
@@ -179,10 +187,16 @@ Ananya Birla,+91 98201 55667,ananya.b@adityabirla.com,Repeat Web Form`;
   assert(dupImportResult.duplicates === 1, 'Correctly detected duplicate on second ingestion');
   assert(dupImportResult.created === 0, 'Zero new records created for duplicate');
 
+  // Clean up ingested test leads
+  for (const l of importResult.createdLeads) {
+    await supabaseDataService.leads.deleteLead(l.id);
+  }
+
   // Test 9: Persistence Round-Trip Diagnostic Verification
   console.log('\n--- 9. Persistence Round-Trip Diagnostic Verification ---');
   const roundTripResult = await supabaseDataService.verifyPersistenceRoundTrip();
   assert(roundTripResult.success, 'Persistence round-trip executed successfully');
+  assert(roundTripResult.isLiveSupabase === true, 'Round-trip executed against LIVE_SUPABASE database (not IN_MEMORY)');
   assert(roundTripResult.insertedId !== '', 'Created diagnostic lead in persistence layer');
   assert(roundTripResult.readBackMatched, 'Read-back matched persisted lead identity');
   assert(roundTripResult.auditEventLogged, 'Audit event was verified in event repository');

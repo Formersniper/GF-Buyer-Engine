@@ -17,6 +17,11 @@ export interface PersistenceHealthStatus {
   message?: string;
   latencyMs?: number;
   lastChecked: string;
+  safeDiagnostics?: {
+    urlConfigured: boolean;
+    keyConfigured: boolean;
+    urlHost: string | null;
+  };
 }
 
 export interface SupabaseConfig {
@@ -28,33 +33,45 @@ export interface SupabaseConfig {
 let cachedClient: SupabaseClient | null = null;
 
 /**
- * Resolves Supabase credentials from Node.js process environment or Vite client meta env.
+ * Resolves client-safe Supabase credentials (URL and anon key only).
+ * Never uses or exposes SUPABASE_SERVICE_ROLE_KEY in client bundle.
  */
 export function getSupabaseConfig(): SupabaseConfig {
   let supabaseUrl: string | null = null;
   let supabaseKey: string | null = null;
 
-  // 1. Node.js process environment (server & CLI test runner)
-  if (typeof process !== 'undefined' && process.env) {
+  // 1. Browser / Vite client environment (import.meta.env)
+  try {
+    if (typeof import.meta !== 'undefined' && (import.meta as any).env) {
+      const metaEnv = (import.meta as any).env;
+      supabaseUrl = metaEnv.VITE_SUPABASE_URL || metaEnv.SUPABASE_URL || null;
+      supabaseKey = metaEnv.VITE_SUPABASE_ANON_KEY || metaEnv.SUPABASE_ANON_KEY || null;
+    }
+  } catch {
+    // Non-module environment
+  }
+
+  // 2. Node.js process environment (SSR, test runner, server)
+  if ((!supabaseUrl || !supabaseKey) && typeof process !== 'undefined' && process.env) {
     supabaseUrl =
-      process.env.SUPABASE_URL ||
+      supabaseUrl ||
       process.env.VITE_SUPABASE_URL ||
+      process.env.SUPABASE_URL ||
       null;
 
     supabaseKey =
-      process.env.SUPABASE_ANON_KEY ||
+      supabaseKey ||
       process.env.VITE_SUPABASE_ANON_KEY ||
-      process.env.SUPABASE_SERVICE_ROLE_KEY ||
+      process.env.SUPABASE_ANON_KEY ||
       null;
   }
 
-  // 2. Browser / Vite import.meta.env
-  if ((!supabaseUrl || !supabaseKey) && typeof import.meta !== 'undefined') {
-    const metaEnv = (import.meta as unknown as { env?: Record<string, string> })?.env;
-    if (metaEnv) {
-      supabaseUrl = supabaseUrl || metaEnv.VITE_SUPABASE_URL || metaEnv.SUPABASE_URL || null;
-      supabaseKey = supabaseKey || metaEnv.VITE_SUPABASE_ANON_KEY || metaEnv.SUPABASE_ANON_KEY || null;
-    }
+  // Clean empty or placeholder values
+  if (supabaseUrl && (supabaseUrl.includes('your-project') || supabaseUrl.trim() === '')) {
+    supabaseUrl = null;
+  }
+  if (supabaseKey && (supabaseKey.includes('your-anon-key') || supabaseKey.trim() === '')) {
+    supabaseKey = null;
   }
 
   // Extract host only (never secrets)
@@ -112,6 +129,12 @@ export async function checkPersistenceHealth(): Promise<PersistenceHealthStatus>
   const { url, key, host } = getSupabaseConfig();
   const now = new Date().toISOString();
 
+  const safeDiagnostics = {
+    urlConfigured: Boolean(url),
+    keyConfigured: Boolean(key),
+    urlHost: host,
+  };
+
   if (!url || !key) {
     return {
       mode: 'IN_MEMORY',
@@ -120,6 +143,7 @@ export async function checkPersistenceHealth(): Promise<PersistenceHealthStatus>
       isLive: false,
       message: 'Supabase credentials not configured in environment. Operating in explicit Local Development Store mode.',
       lastChecked: now,
+      safeDiagnostics,
     };
   }
 
@@ -132,6 +156,7 @@ export async function checkPersistenceHealth(): Promise<PersistenceHealthStatus>
       isLive: false,
       message: 'Failed to instantiate Supabase client with provided credentials.',
       lastChecked: now,
+      safeDiagnostics,
     };
   }
 
@@ -153,6 +178,7 @@ export async function checkPersistenceHealth(): Promise<PersistenceHealthStatus>
         message: `Supabase query failed on public.leads: ${error.message} (code: ${error.code || 'UNKNOWN'})`,
         latencyMs,
         lastChecked: now,
+        safeDiagnostics,
       };
     }
 
@@ -164,6 +190,7 @@ export async function checkPersistenceHealth(): Promise<PersistenceHealthStatus>
       message: `Connected to live Supabase database (${count ?? 0} leads in public.leads).`,
       latencyMs,
       lastChecked: now,
+      safeDiagnostics,
     };
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : 'Unknown network failure';
@@ -174,6 +201,7 @@ export async function checkPersistenceHealth(): Promise<PersistenceHealthStatus>
       isLive: false,
       message: `Supabase connectivity error: ${errorMsg}`,
       lastChecked: now,
+      safeDiagnostics,
     };
   }
 }

@@ -273,12 +273,24 @@ export const LeadImportView: React.FC<LeadImportViewProps> = ({
           <div>
             <span className="text-slate-400">Status: </span>
             <span className={healthStatus?.isLive ? 'text-emerald-400 font-semibold' : 'text-amber-400 font-semibold'}>
-              {healthStatus?.message || 'Checking backend status...'}
+              {healthStatus?.displayName} ({healthStatus?.mode})
             </span>
           </div>
           <div className="text-slate-400 md:text-right">
             <span>Target Host: </span>
             <span className="font-mono text-slate-200">{healthStatus?.urlHost || 'None (Local Map Store)'}</span>
+          </div>
+          <div className="text-slate-400 col-span-full flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] font-mono pt-1">
+            <span>Diagnostics:</span>
+            <span className={healthStatus?.safeDiagnostics?.urlConfigured ? 'text-emerald-400' : 'text-slate-500'}>
+              • URL configured: {healthStatus?.safeDiagnostics?.urlConfigured ? 'true' : 'false'}
+            </span>
+            <span className={healthStatus?.safeDiagnostics?.keyConfigured ? 'text-emerald-400' : 'text-slate-500'}>
+              • Anon Key configured: {healthStatus?.safeDiagnostics?.keyConfigured ? 'true' : 'false'}
+            </span>
+            <span className="text-indigo-300">
+              • Service Role: omitted (client-safe)
+            </span>
           </div>
         </div>
 

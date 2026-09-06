@@ -130,6 +130,30 @@ export function resetLeadIdCounter(startAt = 1): void {
 }
 
 /**
+ * Computes the next unique Lead ID by examining existing records and the local counter
+ */
+export function generateLeadIdFromExisting(existingLeads: Lead[] = [], customYear?: number): string {
+  const year = customYear || new Date().getFullYear();
+  const prefix = `GF-${year}-`;
+  let maxSeq = 0;
+
+  for (const lead of existingLeads) {
+    if (lead?.lead_id && lead.lead_id.startsWith(prefix)) {
+      const seqStr = lead.lead_id.substring(prefix.length);
+      const parsed = parseInt(seqStr, 10);
+      if (!isNaN(parsed) && parsed > maxSeq) {
+        maxSeq = parsed;
+      }
+    }
+  }
+
+  const nextSeq = Math.max(leadCounter, maxSeq + 1);
+  leadCounter = nextSeq + 1;
+  const paddedSeq = String(nextSeq).padStart(6, '0');
+  return `GF-${year}-${paddedSeq}`;
+}
+
+/**
  * Authoritative Lead Resolver
  * Resolves, normalizes, validates, and deduplicates an incoming raw lead against existing database records.
  */
@@ -173,7 +197,7 @@ export function resolveLead(
   if (validationErrors.length > 0 && (!isPhoneValid && !isEmailValid)) {
     return {
       outcome: 'INVALID',
-      leadId: suggestedLeadId || generateLeadId(),
+      leadId: suggestedLeadId || generateLeadIdFromExisting(existingLeads),
       normalized,
       workflowStatus: 'INVALID_CONTACT',
       validationErrors,
@@ -237,7 +261,7 @@ export function resolveLead(
   // New Valid Lead
   return {
     outcome: 'NEW',
-    leadId: suggestedLeadId || generateLeadId(),
+    leadId: suggestedLeadId || generateLeadIdFromExisting(existingLeads),
     normalized,
     workflowStatus: 'RAW',
     validationErrors,
