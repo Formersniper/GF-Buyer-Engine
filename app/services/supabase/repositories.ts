@@ -1087,9 +1087,16 @@ class SupabaseDataService {
         consent_source: lead.source ?? 'CSV_IMPORT',
         consent_timestamp: lead.created_at,
         fields: {
-          phone: { truth: 'KNOWN', source: lead.source ?? 'CSV_IMPORT', confidence: 1.0, timestamp: lead.created_at },
-          email: { truth: 'KNOWN', source: lead.source ?? 'CSV_IMPORT', confidence: 1.0, timestamp: lead.created_at },
-          full_name: { truth: 'KNOWN', source: lead.source ?? 'CSV_IMPORT', confidence: 1.0, timestamp: lead.created_at },
+          phone: { truth: 'KNOWN', truth_level: 'KNOWN', source: lead.source ?? 'CSV_IMPORT', confidence: 1.0, updated_at: lead.created_at },
+          email: { truth: 'KNOWN', truth_level: 'KNOWN', source: lead.source ?? 'CSV_IMPORT', confidence: 1.0, updated_at: lead.created_at },
+          full_name: { truth: 'KNOWN', truth_level: 'KNOWN', source: lead.source ?? 'CSV_IMPORT', confidence: 1.0, updated_at: lead.created_at },
+          ...(latestEnrichment
+            ? {
+                company: { truth: 'INFERRED', truth_level: 'INFERRED', source: 'scout', confidence: latestEnrichment.source_confidence || 0.85, updated_at: latestEnrichment.created_at },
+                location: { truth: 'INFERRED', truth_level: 'INFERRED', source: 'scout', confidence: latestEnrichment.source_confidence || 0.85, updated_at: latestEnrichment.created_at },
+                profession: { truth: 'INFERRED', truth_level: 'INFERRED', source: 'scout', confidence: latestEnrichment.source_confidence || 0.85, updated_at: latestEnrichment.created_at },
+              }
+            : {}),
         },
       },
       workflow: {

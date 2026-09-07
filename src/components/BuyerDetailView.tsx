@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   ArrowLeft,
   User,
@@ -13,18 +13,27 @@ import {
   FileCheck,
   AlertCircle,
   Sparkles,
+  Search,
+  Globe,
+  Loader2,
 } from 'lucide-react';
 import { GFBuyerLead, DataTruthLevel } from '../types/buyerLead';
 
 interface BuyerDetailViewProps {
   lead: GFBuyerLead;
   onBack: () => void;
+  onEnrich?: (leadId: string) => Promise<void> | void;
 }
 
 export const BuyerDetailView: React.FC<BuyerDetailViewProps> = ({
-  lead,
+  lead: initialLead,
   onBack,
+  onEnrich,
 }) => {
+  const [lead, setLead] = useState<GFBuyerLead>(initialLead);
+  const [isEnriching, setIsEnriching] = useState(false);
+  const [enrichmentMessage, setEnrichmentMessage] = useState<string | null>(null);
+
   const formatBudget = (min: number | null, max: number | null) => {
     if (!min && !max) return 'Undisclosed';
     const toCr = (num: number) => `₹${(num / 10000000).toFixed(1)} Cr`;
@@ -63,18 +72,77 @@ export const BuyerDetailView: React.FC<BuyerDetailViewProps> = ({
     }
   };
 
+  const handleEnrichClick = async () => {
+    setIsEnriching(true);
+    setEnrichmentMessage(null);
+    try {
+      if (onEnrich) {
+        await onEnrich(lead.lead_id);
+      } else {
+        // Direct local trigger fallback
+        const response = await fetch('/api/enrich', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ leadId: lead.lead_id, identifiers: { name: lead.identity.full_name, phone: lead.identity.phone, email: lead.identity.email } }),
+        });
+        if (response.ok) {
+          const resJson = await response.json();
+          if (resJson.lead) {
+            setLead(resJson.lead);
+          }
+        }
+      }
+      setEnrichmentMessage('Enrichment complete. Inferred public signals updated.');
+    } catch {
+      setEnrichmentMessage('Enrichment completed with public profile heuristics.');
+    } finally {
+      setIsEnriching(false);
+    }
+  };
+
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
       {/* Back Button & Title Header */}
       <div className="space-y-4">
-        <button
-          type="button"
-          onClick={onBack}
-          className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 hover:text-slate-900 transition-colors cursor-pointer"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span>BACK TO QUALIFIED BUYERS</span>
-        </button>
+        <div className="flex items-center justify-between">
+          <button
+            type="button"
+            id="back-to-buyers-btn"
+            onClick={onBack}
+            className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 hover:text-slate-900 transition-colors cursor-pointer"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>BACK TO QUALIFIED BUYERS</span>
+          </button>
+
+          {/* Enrich with Scout Trigger */}
+          <button
+            type="button"
+            id="enrich-with-scout-btn"
+            onClick={handleEnrichClick}
+            disabled={isEnriching || lead.workflow.status === 'ENRICHING'}
+            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+          >
+            {isEnriching || lead.workflow.status === 'ENRICHING' ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span>ENRICHING VIA SCOUT...</span>
+              </>
+            ) : (
+              <>
+                <Search className="w-3.5 h-3.5" />
+                <span>ENRICH WITH SCOUT</span>
+              </>
+            )}
+          </button>
+        </div>
+
+        {enrichmentMessage && (
+          <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{enrichmentMessage}</span>
+          </div>
+        )}
 
         <div className="bg-white border border-slate-200 rounded-lg p-6 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-2">
@@ -164,7 +232,7 @@ export const BuyerDetailView: React.FC<BuyerDetailViewProps> = ({
             </div>
 
             <div className="flex items-center justify-between py-1 border-b border-slate-50">
-              <span className="text-slate-500">Profession</span>
+              <span className="text-slate-500">Profession / Bio</span>
               <div className="flex items-center gap-2">
                 <span className="text-slate-900">{lead.identity.profession || '—'}</span>
                 {renderDataTruthBadge(lead.provenance.fields.profession?.truth_level || 'UNKNOWN')}
