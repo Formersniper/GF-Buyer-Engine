@@ -16,8 +16,11 @@ import {
   Search,
   Globe,
   Loader2,
+  PhoneForwarded,
 } from 'lucide-react';
 import { GFBuyerLead, DataTruthLevel } from '../types/buyerLead';
+import { callService, CallEligibilityExecutionResult } from '../services/calls/callService';
+import { CallEligibilityResult } from '../services/calls/callEligibility';
 
 interface BuyerDetailViewProps {
   lead: GFBuyerLead;
@@ -32,7 +35,10 @@ export const BuyerDetailView: React.FC<BuyerDetailViewProps> = ({
 }) => {
   const [lead, setLead] = useState<GFBuyerLead>(initialLead);
   const [isEnriching, setIsEnriching] = useState(false);
+  const [isEvaluatingCalls, setIsEvaluatingCalls] = useState(false);
   const [enrichmentMessage, setEnrichmentMessage] = useState<string | null>(null);
+  const [eligibilityResult, setEligibilityResult] = useState<CallEligibilityResult | null>(null);
+  const [mockCallId, setMockCallId] = useState<string | null>(null);
 
   const formatBudget = (min: number | null, max: number | null) => {
     if (!min && !max) return 'Undisclosed';
@@ -100,6 +106,24 @@ export const BuyerDetailView: React.FC<BuyerDetailViewProps> = ({
     }
   };
 
+  const handleEvaluateCallEligibility = async () => {
+    setIsEvaluatingCalls(true);
+    try {
+      const result: CallEligibilityExecutionResult = await callService.evaluateAndPrepareCall(lead.lead_id, {
+        actor: 'human_operator',
+      });
+      setLead(result.canonicalLead);
+      setEligibilityResult(result.eligibility);
+      if (result.mockCallResult) {
+        setMockCallId(result.mockCallResult.callId);
+      }
+    } catch (err: unknown) {
+      console.error('Call eligibility evaluation failed:', err);
+    } finally {
+      setIsEvaluatingCalls(false);
+    }
+  };
+
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
       {/* Back Button & Title Header */}
@@ -115,27 +139,95 @@ export const BuyerDetailView: React.FC<BuyerDetailViewProps> = ({
             <span>BACK TO QUALIFIED BUYERS</span>
           </button>
 
-          {/* Enrich with Scout Trigger */}
-          <button
-            type="button"
-            id="enrich-with-scout-btn"
-            onClick={handleEnrichClick}
-            disabled={isEnriching || lead.workflow.status === 'ENRICHING'}
-            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer"
-          >
-            {isEnriching || lead.workflow.status === 'ENRICHING' ? (
-              <>
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                <span>ENRICHING VIA SCOUT...</span>
-              </>
-            ) : (
-              <>
-                <Search className="w-3.5 h-3.5" />
-                <span>ENRICH WITH SCOUT</span>
-              </>
-            )}
-          </button>
+          <div className="flex items-center gap-2.5">
+            {/* Enrich with Scout Trigger */}
+            <button
+              type="button"
+              id="enrich-with-scout-btn"
+              onClick={handleEnrichClick}
+              disabled={isEnriching || lead.workflow.status === 'ENRICHING'}
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+            >
+              {isEnriching || lead.workflow.status === 'ENRICHING' ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>ENRICHING VIA SCOUT...</span>
+                </>
+              ) : (
+                <>
+                  <Search className="w-3.5 h-3.5" />
+                  <span>ENRICH WITH SCOUT</span>
+                </>
+              )}
+            </button>
+
+            {/* Evaluate Call Eligibility Trigger (Phase 4A) */}
+            <button
+              type="button"
+              id="evaluate-call-eligibility-btn"
+              onClick={handleEvaluateCallEligibility}
+              disabled={isEvaluatingCalls || lead.workflow.status === 'ENRICHING'}
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:bg-slate-400 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+            >
+              {isEvaluatingCalls ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>EVALUATING ELIGIBILITY...</span>
+                </>
+              ) : (
+                <>
+                  <PhoneForwarded className="w-3.5 h-3.5" />
+                  <span>EVALUATE CALL ELIGIBILITY</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
+
+        {/* Call Eligibility Evaluation Banner / Policy Card */}
+        {eligibilityResult && (
+          <div
+            id="call-eligibility-result-card"
+            className={`p-4 rounded-lg border text-xs space-y-2 ${
+              eligibilityResult.decision === 'ELIGIBLE'
+                ? 'bg-emerald-50/80 border-emerald-200 text-emerald-950'
+                : eligibilityResult.decision === 'REQUIRES_REVIEW'
+                ? 'bg-amber-50/80 border-amber-200 text-amber-950'
+                : 'bg-rose-50/80 border-rose-200 text-rose-950'
+            }`}
+          >
+            <div className="flex items-center justify-between font-semibold">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4" />
+                <span className="font-bold uppercase tracking-wider">
+                  Call Eligibility Decision: {eligibilityResult.decision}
+                </span>
+              </div>
+              <span className="font-mono text-[11px] px-2 py-0.5 rounded bg-white/80 border border-slate-200">
+                Policy: {eligibilityResult.policyVersion}
+              </span>
+            </div>
+
+            <div className="space-y-1 text-slate-800">
+              <div className="font-medium text-[11px]">Evaluation Reasons:</div>
+              <ul className="list-disc list-inside space-y-0.5 text-[11px] pl-1 text-slate-700">
+                {eligibilityResult.reasons.map((r, idx) => (
+                  <li key={idx}>{r}</li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-4 pt-2 border-t border-slate-200/60 text-[11px] font-mono">
+              <span>Phone Format: {eligibilityResult.phone_format_valid ? 'VALID_FORMAT' : 'INVALID'}</span>
+              <span>Consent State: {eligibilityResult.consent_state}</span>
+              {mockCallId && (
+                <span className="font-bold text-emerald-800">
+                  Mock Voice Provider: Ready ({mockCallId}, initiated = false)
+                </span>
+              )}
+            </div>
+          </div>
+        )}
 
         {enrichmentMessage && (
           <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 flex items-center gap-2">

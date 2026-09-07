@@ -53,6 +53,7 @@ export interface LeadEnrichmentRepository {
 export interface CallsRepository {
   createCall(call: Omit<Call, 'id' | 'created_at'> & { id?: string }): Promise<Call>;
   getCall(id: string): Promise<Call | null>;
+  getCallByProviderCallId(providerCallId: string): Promise<Call | null>;
   getCallsByLead(leadId: string): Promise<Call[]>;
   updateCall(id: string, updates: Partial<Omit<Call, 'id' | 'lead_id' | 'created_at'>>): Promise<Call>;
 }
@@ -445,8 +446,8 @@ class SupabaseDataService {
         provider_call_id: input.provider_call_id ?? null,
         status: input.status ?? 'INITIATED',
         attempt_number: input.attempt_number ?? 1,
-        started_at: input.started_at ?? now,
-        ended_at: input.ended_at ?? null,
+        started_at: input.started_at !== undefined ? input.started_at : now,
+        ended_at: input.ended_at !== undefined ? input.ended_at : null,
         duration_seconds: input.duration_seconds ?? 0,
         transcript: input.transcript ?? null,
         recording_url: input.recording_url ?? null,
@@ -471,17 +472,44 @@ class SupabaseDataService {
       return record;
     },
 
-    getCall: async (id: string) => {
+    getCall: async (idOrProviderCallId: string) => {
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrProviderCallId);
       const client = getSupabaseClient();
       if (client) {
-        const { data, error } = await client.from('calls').select('*').eq('id', id).maybeSingle();
+        if (isUUID) {
+          const { data, error } = await client.from('calls').select('*').eq('id', idOrProviderCallId).maybeSingle();
+          if (error) {
+            console.error('[Supabase Query Error] calls:', error);
+            throw new Error(`Supabase query failed on calls: ${error.message}`);
+          }
+          if (data) return data;
+        } else {
+          const { data, error } = await client.from('calls').select('*').eq('provider_call_id', idOrProviderCallId).maybeSingle();
+          if (error) {
+            console.error('[Supabase Query Error] calls:', error);
+            throw new Error(`Supabase query failed on calls: ${error.message}`);
+          }
+          if (data) return data;
+        }
+      }
+      return (
+        this.callsStore.get(idOrProviderCallId) ||
+        Array.from(this.callsStore.values()).find((c) => c.provider_call_id === idOrProviderCallId) ||
+        null
+      );
+    },
+
+    getCallByProviderCallId: async (providerCallId: string) => {
+      const client = getSupabaseClient();
+      if (client) {
+        const { data, error } = await client.from('calls').select('*').eq('provider_call_id', providerCallId).maybeSingle();
         if (error) {
           console.error('[Supabase Query Error] calls:', error);
           throw new Error(`Supabase query failed on calls: ${error.message}`);
         }
         if (data) return data;
       }
-      return this.callsStore.get(id) || null;
+      return Array.from(this.callsStore.values()).find((c) => c.provider_call_id === providerCallId) || null;
     },
 
     getCallsByLead: async (leadId: string) => {

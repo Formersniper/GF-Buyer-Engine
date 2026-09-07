@@ -12,6 +12,7 @@ import { WorkflowStateMachine } from '../workflow/stateMachine';
 import { supabaseDataService } from '../supabase/repositories';
 import { resolveLead } from './leadResolver';
 import { scoutAdapter, ScoutEnrichmentQuery } from '../scout/scoutAdapter';
+import { callService, CallEligibilityExecutionResult, EvaluateCallEligibilityOptions } from '../calls/callService';
 
 export interface LeadProcessingOptions {
   autoEnrich?: boolean;
@@ -45,6 +46,14 @@ export interface LeadService {
    * Dispatches public enrichment request through ScoutAdapter
    */
   triggerEnrichment(leadId: string): Promise<GFBuyerLead>;
+
+  /**
+   * Evaluates call eligibility and triggers mock voice provider handoff if eligible
+   */
+  evaluateCallEligibility(
+    leadId: string,
+    options?: EvaluateCallEligibilityOptions
+  ): Promise<CallEligibilityExecutionResult>;
 
   /**
    * Ingests voice qualification conversation results and triggers structured extraction
@@ -297,6 +306,16 @@ export class DefaultLeadService implements LeadService {
       throw new Error(`Failed to map canonical lead for ID: ${dbLead.id}`);
     }
     return canonical;
+  }
+
+  /**
+   * Evaluates call eligibility and coordinates deterministic transition and mock provider handoff
+   */
+  async evaluateCallEligibility(
+    leadId: string,
+    options?: EvaluateCallEligibilityOptions
+  ): Promise<CallEligibilityExecutionResult> {
+    return callService.evaluateAndPrepareCall(leadId, options);
   }
 }
 
