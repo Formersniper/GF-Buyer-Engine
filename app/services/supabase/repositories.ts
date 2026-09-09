@@ -502,12 +502,17 @@ class SupabaseDataService {
     getCallByProviderCallId: async (providerCallId: string) => {
       const client = getSupabaseClient();
       if (client) {
-        const { data, error } = await client.from('calls').select('*').eq('provider_call_id', providerCallId).maybeSingle();
+        const { data, error } = await client
+          .from('calls')
+          .select('*')
+          .eq('provider_call_id', providerCallId)
+          .order('created_at', { ascending: false })
+          .limit(1);
         if (error) {
           console.error('[Supabase Query Error] calls:', error);
           throw new Error(`Supabase query failed on calls: ${error.message}`);
         }
-        if (data) return data;
+        if (data && data.length > 0) return data[0];
       }
       return Array.from(this.callsStore.values()).find((c) => c.provider_call_id === providerCallId) || null;
     },

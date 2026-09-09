@@ -3,35 +3,69 @@
  *
  * VOICE RULE:
  * Provider-neutral abstraction for autonomous voice qualification.
- * Implementations (Twilio, Bland, Retell, Vapi, LiveKit) must adhere to this contract.
+ * Implementations (MockVoiceProvider, SarvamVoiceProvider, future VapiVoiceProvider)
+ * must adhere strictly to this contract.
  */
 
-export interface CallInitiationParams {
+export interface VoiceCallRequest {
   lead_id: string;
   phone_number: string;
   contact_name: string;
   call_script_id?: string;
   custom_variables?: Record<string, string>;
+  system_prompt?: string;
 }
+
+export type CallInitiationParams = VoiceCallRequest;
 
 export type CallStatus =
   | 'initiated'
   | 'ringing'
   | 'in-progress'
+  | 'connected'
   | 'completed'
   | 'busy'
   | 'no-answer'
   | 'failed'
-  | 'canceled';
+  | 'canceled'
+  | 'MOCK_READY'
+  | 'CALL_PENDING'
+  | 'CALLING'
+  | 'NO_ANSWER'
+  | 'CALL_FAILED';
 
-export interface CallStatusResponse {
-  call_id: string;
-  lead_id: string;
-  status: CallStatus;
-  duration_seconds: number;
+export interface VoiceCallResult {
+  callId: string;
+  provider: string;
+  status: string;
+  initiated: boolean;
+  external_call_id?: string | null;
+  created_at: string;
+}
+
+export interface VoiceCallStatus {
+  callId: string;
+  leadId: string;
+  provider: string;
+  status: string;
+  initiated: boolean;
+  external_call_id?: string | null;
   started_at?: string | null;
   ended_at?: string | null;
+  duration_seconds?: number;
   failure_reason?: string | null;
+}
+
+export type CallStatusResponse = VoiceCallStatus;
+
+export interface ProviderHealthResult {
+  provider: string;
+  configured: boolean;
+  reachable: boolean;
+  agent_configured: boolean;
+  phone_configured: boolean;
+  mode: 'REAL' | 'MOCK';
+  reason?: string;
 }
 
 export interface TranscriptUtterance {
@@ -51,7 +85,7 @@ export interface CallTranscript {
 }
 
 export interface WebhookPayload {
-  event_type: 'call.started' | 'call.answered' | 'call.ended' | 'transcript.ready' | 'call.failed';
+  event_type: 'call.started' | 'call.answered' | 'call.ended' | 'transcript.ready' | 'call.failed' | string;
   call_id: string;
   lead_id: string;
   timestamp: string;
@@ -65,31 +99,23 @@ export interface WebhookProcessingResult {
   error?: string;
 }
 
-export interface VoiceProvider {
+export interface IVoiceProvider {
   readonly providerName: string;
 
   /**
    * Dispatches an outbound voice qualification call
    */
-  startCall(params: CallInitiationParams): Promise<{ call_id: string; status: CallStatus }>;
+  initiateCall(input: VoiceCallRequest): Promise<VoiceCallResult>;
 
   /**
    * Retrieves the current call status and telemetry
    */
-  getCallStatus(call_id: string): Promise<CallStatusResponse>;
+  getCallStatus(callId: string): Promise<VoiceCallStatus>;
 
   /**
-   * Ingests and processes asynchronous webhook callbacks from voice telephony
+   * Health check / probe for provider readiness
    */
-  processWebhook(payload: WebhookPayload): Promise<WebhookProcessingResult>;
-
-  /**
-   * Retrieves full verbatim transcript of the voice qualification session
-   */
-  getTranscript(call_id: string): Promise<CallTranscript>;
-
-  /**
-   * Explicitly terminates an active call
-   */
-  endCall(call_id: string): Promise<{ success: boolean; terminated_at: string }>;
+  checkHealth?(): Promise<ProviderHealthResult>;
 }
+
+export type VoiceProvider = IVoiceProvider;

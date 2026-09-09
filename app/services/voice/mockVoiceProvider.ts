@@ -1,5 +1,5 @@
 /**
- * GrowthForge Buyer Intelligence Engine - Mock Voice Provider (Phase 4A)
+ * GrowthForge Buyer Intelligence Engine - Mock Voice Provider (Phase 4A & 4B Regression)
  *
  * SPECIFICATION:
  * - Provider-neutral boundary validation.
@@ -9,41 +9,30 @@
  */
 
 import { supabaseDataService } from '../supabase/repositories';
-
-export interface VoiceCallRequest {
-  lead_id: string;
-  phone_number: string;
-  contact_name: string;
-  call_script_id?: string;
-  custom_variables?: Record<string, string>;
-}
-
-export interface VoiceCallResult {
-  callId: string;
-  provider: 'mock';
-  status: 'MOCK_READY';
-  initiated: false;
-  created_at: string;
-}
-
-export interface VoiceCallStatus {
-  callId: string;
-  leadId: string;
-  provider: 'mock';
-  status: 'MOCK_READY';
-  initiated: false;
-  started_at: null;
-  ended_at: null;
-}
-
-export interface IVoiceProvider {
-  readonly providerName: string;
-  initiateCall(input: VoiceCallRequest): Promise<VoiceCallResult>;
-  getCallStatus(callId: string): Promise<VoiceCallStatus>;
-}
+import {
+  VoiceCallRequest,
+  VoiceCallResult,
+  VoiceCallStatus,
+  IVoiceProvider,
+  ProviderHealthResult,
+} from './voiceProvider';
 
 export class MockVoiceProvider implements IVoiceProvider {
   readonly providerName = 'mock';
+
+  /**
+   * Safe Mock Health Check
+   */
+  async checkHealth(): Promise<ProviderHealthResult> {
+    return {
+      provider: 'mock',
+      configured: true,
+      reachable: true,
+      agent_configured: true,
+      phone_configured: true,
+      mode: 'MOCK',
+    };
+  }
 
   /**
    * Mock handoff - Persists a MOCK_READY call record without initiating any real outbound call.
@@ -97,3 +86,4 @@ export class MockVoiceProvider implements IVoiceProvider {
 }
 
 export const mockVoiceProvider = new MockVoiceProvider();
+export type { VoiceCallRequest, VoiceCallResult, VoiceCallStatus, IVoiceProvider };

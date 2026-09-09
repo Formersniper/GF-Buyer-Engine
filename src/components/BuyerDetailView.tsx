@@ -39,6 +39,14 @@ export const BuyerDetailView: React.FC<BuyerDetailViewProps> = ({
   const [enrichmentMessage, setEnrichmentMessage] = useState<string | null>(null);
   const [eligibilityResult, setEligibilityResult] = useState<CallEligibilityResult | null>(null);
   const [mockCallId, setMockCallId] = useState<string | null>(null);
+  const [isCalling, setIsCalling] = useState(false);
+  const [callSession, setCallSession] = useState<{
+    callId?: string;
+    provider?: string;
+    status?: string;
+    duration?: number;
+    error?: string;
+  } | null>(null);
 
   const formatBudget = (min: number | null, max: number | null) => {
     if (!min && !max) return 'Undisclosed';
@@ -124,6 +132,42 @@ export const BuyerDetailView: React.FC<BuyerDetailViewProps> = ({
     }
   };
 
+  const handleStartCall = async () => {
+    setIsCalling(true);
+    setCallSession(null);
+    try {
+      const response = await fetch('/api/voice/start-call', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leadId: lead.lead_id }),
+      });
+
+      if (!response.ok) {
+        const errJson = await response.json().catch(() => ({}));
+        throw new Error(errJson.error || `Call start request failed (${response.status})`);
+      }
+
+      const resData = await response.json();
+      if (resData.canonicalLead) {
+        setLead(resData.canonicalLead);
+      }
+      setCallSession({
+        callId: resData.callResult?.external_call_id || resData.callResult?.callId,
+        provider: resData.callResult?.provider || 'sarvam',
+        status: resData.callResult?.status || 'CALLING',
+        duration: 0,
+      });
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : 'Outbound call failed';
+      setCallSession({
+        error: errMsg,
+        status: 'CALL_FAILED',
+      });
+    } finally {
+      setIsCalling(false);
+    }
+  };
+
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
       {/* Back Button & Title Header */}
@@ -177,12 +221,73 @@ export const BuyerDetailView: React.FC<BuyerDetailViewProps> = ({
               ) : (
                 <>
                   <PhoneForwarded className="w-3.5 h-3.5" />
-                  <span>EVALUATE CALL ELIGIBILITY</span>
+                  <span>EVALUATE ELIGIBILITY</span>
+                </>
+              )}
+            </button>
+
+            {/* Start Qualification Call Trigger (Phase 4B) */}
+            <button
+              type="button"
+              id="start-qualification-call-btn"
+              onClick={handleStartCall}
+              disabled={
+                isCalling ||
+                lead.workflow.status === 'CALLING' ||
+                lead.workflow.status === 'CONNECTED' ||
+                (lead.workflow.status !== 'CALL_PENDING' && lead.workflow.status !== 'ENRICHED')
+              }
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+            >
+              {isCalling ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>DISPATCHING VOICE CALL...</span>
+                </>
+              ) : (
+                <>
+                  <PhoneCall className="w-3.5 h-3.5" />
+                  <span>START QUALIFICATION CALL</span>
                 </>
               )}
             </button>
           </div>
         </div>
+
+        {/* Active Call Session Banner (Phase 4B) */}
+        {callSession && (
+          <div
+            id="active-call-session-card"
+            className={`p-4 rounded-lg border text-xs space-y-2 ${
+              callSession.status === 'CALL_FAILED'
+                ? 'bg-rose-50 border-rose-200 text-rose-950'
+                : 'bg-indigo-50/90 border-indigo-200 text-indigo-950'
+            }`}
+          >
+            <div className="flex items-center justify-between font-semibold">
+              <div className="flex items-center gap-2">
+                <PhoneCall className="w-4 h-4 text-indigo-600" />
+                <span className="font-bold uppercase tracking-wider">
+                  Voice Qualification Call ({callSession.provider || 'sarvam'}): {callSession.status}
+                </span>
+              </div>
+              {callSession.callId && (
+                <span className="font-mono text-[11px] px-2 py-0.5 rounded bg-white border border-indigo-200 text-indigo-900 font-bold">
+                  Call ID: {callSession.callId}
+                </span>
+              )}
+            </div>
+            {callSession.error ? (
+              <p className="text-rose-700 font-medium">{callSession.error}</p>
+            ) : (
+              <div className="flex items-center gap-4 text-slate-700 text-[11px] font-mono">
+                <span>Target: {lead.identity.phone ? lead.identity.phone.slice(-4).padStart(lead.identity.phone.length, '*') : 'Masked'}</span>
+                <span>Persona: Neha (Residential Specialist)</span>
+                <span>Language: English / Hindi / Hinglish</span>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Call Eligibility Evaluation Banner / Policy Card */}
         {eligibilityResult && (
