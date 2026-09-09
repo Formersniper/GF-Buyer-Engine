@@ -4,6 +4,8 @@ import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { callService } from './app/services/calls/callService';
 import { processSarvamWebhook } from './app/services/voice/sarvamWebhook';
+import { transcriptIngestionService } from './app/services/voice/transcriptIngestionService';
+import { supabaseDataService } from './app/services/supabase/repositories';
 import { scoutAdapter } from './app/services/scout/scoutAdapter';
 
 async function startServer() {
@@ -68,6 +70,39 @@ async function startServer() {
       res.json(status);
     } catch (err: unknown) {
       res.status(404).json({ error: err instanceof Error ? err.message : 'Call not found' });
+    }
+  });
+
+  // Call Transcript Retrieval (Phase 5A)
+  app.get('/api/voice/transcripts/:callId', async (req, res) => {
+    try {
+      const transcript = await supabaseDataService.transcripts.getTranscriptByCallId(req.params.callId);
+      if (!transcript) {
+        return res.status(404).json({ error: 'Transcript not found for this call' });
+      }
+      res.json(transcript);
+    } catch (err: unknown) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to get transcript' });
+    }
+  });
+
+  // Lead Transcripts Retrieval (Phase 5A)
+  app.get('/api/voice/transcripts/lead/:leadId', async (req, res) => {
+    try {
+      const transcripts = await supabaseDataService.transcripts.getTranscriptsByLeadId(req.params.leadId);
+      res.json(transcripts);
+    } catch (err: unknown) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to get transcripts' });
+    }
+  });
+
+  // Direct Ingest Transcript Endpoint (Internal/Testing)
+  app.post('/api/voice/transcripts/ingest', async (req, res) => {
+    try {
+      const result = await transcriptIngestionService.ingestTranscript(req.body);
+      res.json(result);
+    } catch (err: unknown) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Transcript ingestion failed' });
     }
   });
 

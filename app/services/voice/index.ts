@@ -5,3 +5,4 @@ export * from './sarvamPrompt';
 export * from './sarvamClient';
 export * from './sarvamVoiceProvider';
 export * from './sarvamWebhook';
+export * from './transcriptIngestionService';

@@ -151,3 +151,29 @@ export interface LeadEvent {
   event_data: Record<string, unknown> | null;
   created_at: string;
 }
+
+export interface TranscriptTurn {
+  speaker: 'agent' | 'user' | 'system' | string;
+  text: string;
+  timestamp?: string;
+  raw_data?: Record<string, unknown>;
+}
+
+export interface CallTranscript {
+  id: string; // UUID
+  lead_id: string; // UUID FK -> leads.id
+  call_id: string; // UUID FK -> calls.id
+  provider_call_id: string | null;
+  interaction_id: string | null;
+  transcript_text: string;
+  transcript_turns: TranscriptTurn[] | null;
+  language: string | null;
+  duration_seconds: number | null;
+  source: string;
+  source_event_type: string | null;
+  ingestion_status: string;
+  ingestion_version: string;
+  captured_at: string;
+  created_at: string;
+  updated_at: string;
+}

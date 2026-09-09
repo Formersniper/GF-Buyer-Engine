@@ -11,6 +11,7 @@
 
 import { supabaseDataService } from '../supabase/repositories';
 import { WorkflowStatus } from '../../schemas/workflow';
+import { transcriptIngestionService } from './transcriptIngestionService';
 
 export interface SarvamWebhookEventPayload {
   event_id?: string;
@@ -213,7 +214,24 @@ export async function processSarvamWebhook(
   // 7. Update lead status in Supabase
   await supabaseDataService.leads.updateLead(dbCall.lead_id, { status: mappedWorkflowStatus });
 
-  // 8. Record audit event in Supabase lead_events
+  // 8. Ingest transcript if present in payload (Phase 5A)
+  const hasTranscriptData = Boolean(
+    payload.transcript ||
+    payload.variables?.transcript ||
+    (payload as Record<string, unknown>).transcript_turns ||
+    (payload as Record<string, unknown>).messages ||
+    (payload as Record<string, unknown>).turns
+  );
+
+  if (hasTranscriptData) {
+    try {
+      await transcriptIngestionService.ingestSarvamTranscript(payload);
+    } catch (ingestErr) {
+      console.error('[Transcript Ingestion Error] Failed to ingest transcript from webhook payload:', ingestErr);
+    }
+  }
+
+  // 9. Record audit event in Supabase lead_events
   if (leadEventType) {
     await supabaseDataService.leadEvents.appendLeadEvent({
       lead_id: dbCall.lead_id,

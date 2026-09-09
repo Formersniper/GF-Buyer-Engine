@@ -27,6 +27,8 @@ import {
   DbProjectMatch,
   BuyerScore,
   LeadEvent,
+  CallTranscript,
+  TranscriptTurn,
 } from '../../schemas/database';
 import { GFBuyerLead, ProjectMatch as DomainProjectMatch } from '../../schemas/buyerLead';
 import { WorkflowStatus } from '../../schemas/workflow';
@@ -37,7 +39,7 @@ import { getSupabaseClient } from './client';
 // ==========================================
 
 export interface LeadsRepository {
-  createLead(lead: Omit<Lead, 'id' | 'created_at' | 'updated_at'> & { id?: string }): Promise<Lead>;
+  createLead(lead: Partial<Omit<Lead, 'id' | 'created_at' | 'updated_at'>> & { lead_id: string; phone: string; name?: string } & { id?: string }): Promise<Lead>;
   getLead(id: string): Promise<Lead | null>;
   getLeadByLeadId(leadId: string): Promise<Lead | null>;
   updateLead(id: string, updates: Partial<Omit<Lead, 'id' | 'lead_id' | 'created_at'>>): Promise<Lead>;
@@ -51,7 +53,7 @@ export interface LeadEnrichmentRepository {
 }
 
 export interface CallsRepository {
-  createCall(call: Omit<Call, 'id' | 'created_at'> & { id?: string }): Promise<Call>;
+  createCall(call: Partial<Omit<Call, 'id' | 'created_at'>> & { lead_id: string } & { id?: string }): Promise<Call>;
   getCall(id: string): Promise<Call | null>;
   getCallByProviderCallId(providerCallId: string): Promise<Call | null>;
   getCallsByLead(leadId: string): Promise<Call[]>;
@@ -90,6 +92,14 @@ export interface LeadEventsRepository {
   getLeadEvents(leadId: string): Promise<LeadEvent[]>;
 }
 
+export interface CallTranscriptsRepository {
+  createTranscript(transcript: Omit<CallTranscript, 'id' | 'created_at' | 'updated_at'> & { id?: string }): Promise<CallTranscript>;
+  getTranscript(id: string): Promise<CallTranscript | null>;
+  getTranscriptByCallId(callId: string): Promise<CallTranscript | null>;
+  getTranscriptByProviderCallId(providerCallId: string): Promise<CallTranscript | null>;
+  getTranscriptsByLeadId(leadId: string): Promise<CallTranscript[]>;
+}
+
 // ==========================================
 // 2. IN-MEMORY & CLIENT BACKED STORE
 // ==========================================
@@ -98,6 +108,7 @@ class SupabaseDataService {
   private leadsStore: Map<string, Lead> = new Map();
   private enrichmentStore: Map<string, LeadEnrichment[]> = new Map();
   private callsStore: Map<string, Call> = new Map();
+  private transcriptsStore: Map<string, CallTranscript> = new Map();
   private buyerProfilesStore: Map<string, BuyerProfile> = new Map();
   private buyerPreferencesStore: Map<string, BuyerPreference[]> = new Map();
   private projectsStore: Map<string, DbProject> = new Map();
@@ -925,6 +936,120 @@ class SupabaseDataService {
         if (data) return data;
       }
       return this.leadEventsStore.get(leadId) || [];
+    },
+  };
+
+  // --- Call Transcripts (Phase 5A) ---
+  public readonly transcripts: CallTranscriptsRepository = {
+    createTranscript: async (input) => {
+      const client = getSupabaseClient();
+      const now = new Date().toISOString();
+      const id = input.id || this.generateUUID();
+      const record: CallTranscript = {
+        id,
+        lead_id: input.lead_id,
+        call_id: input.call_id,
+        provider_call_id: input.provider_call_id ?? null,
+        interaction_id: input.interaction_id ?? null,
+        transcript_text: input.transcript_text,
+        transcript_turns: input.transcript_turns ?? null,
+        language: input.language ?? 'unknown',
+        duration_seconds: input.duration_seconds ?? null,
+        source: input.source ?? 'sarvam',
+        source_event_type: input.source_event_type ?? null,
+        ingestion_status: input.ingestion_status ?? 'INGESTED',
+        ingestion_version: input.ingestion_version ?? 'v1',
+        captured_at: input.captured_at || now,
+        created_at: now,
+        updated_at: now,
+      };
+
+      if (client) {
+        try {
+          const { data, error } = await client.from('call_transcripts').insert(record).select().single();
+          if (error) {
+            // If table doesn't exist yet on remote instance, fallback to local store
+            if (error.code === 'PGRST205' || error.message?.includes('not find the table')) {
+              console.warn('[Supabase Fallback] call_transcripts table not found on remote; using in-memory store.');
+            } else {
+              console.error('[Supabase Insert Error] call_transcripts:', error);
+            }
+          } else if (data) {
+            this.transcriptsStore.set(data.id, data);
+            return data;
+          }
+        } catch (err) {
+          console.warn('[Supabase Insert Exception] call_transcripts fallback:', err);
+        }
+      }
+
+      this.transcriptsStore.set(record.id, record);
+      return record;
+    },
+
+    getTranscript: async (id: string) => {
+      const client = getSupabaseClient();
+      if (client) {
+        try {
+          const { data, error } = await client.from('call_transcripts').select('*').eq('id', id).maybeSingle();
+          if (!error && data) return data;
+        } catch {
+          // ignore and fallback
+        }
+      }
+      return this.transcriptsStore.get(id) || null;
+    },
+
+    getTranscriptByCallId: async (callId: string) => {
+      const client = getSupabaseClient();
+      if (client) {
+        try {
+          const { data, error } = await client
+            .from('call_transcripts')
+            .select('*')
+            .eq('call_id', callId)
+            .maybeSingle();
+          if (!error && data) return data;
+        } catch {
+          // ignore and fallback
+        }
+      }
+      return Array.from(this.transcriptsStore.values()).find((t) => t.call_id === callId) || null;
+    },
+
+    getTranscriptByProviderCallId: async (providerCallId: string) => {
+      const client = getSupabaseClient();
+      if (client) {
+        try {
+          const { data, error } = await client
+            .from('call_transcripts')
+            .select('*')
+            .eq('provider_call_id', providerCallId)
+            .order('created_at', { ascending: false })
+            .limit(1);
+          if (!error && data && data.length > 0) return data[0];
+        } catch {
+          // ignore and fallback
+        }
+      }
+      return Array.from(this.transcriptsStore.values()).find((t) => t.provider_call_id === providerCallId) || null;
+    },
+
+    getTranscriptsByLeadId: async (leadId: string) => {
+      const client = getSupabaseClient();
+      if (client) {
+        try {
+          const { data, error } = await client
+            .from('call_transcripts')
+            .select('*')
+            .eq('lead_id', leadId)
+            .order('created_at', { ascending: true });
+          if (!error && data) return data;
+        } catch {
+          // ignore and fallback
+        }
+      }
+      return Array.from(this.transcriptsStore.values()).filter((t) => t.lead_id === leadId);
     },
   };
 

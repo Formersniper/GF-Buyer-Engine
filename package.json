@@ -13,7 +13,8 @@
     "test:phase4a": "tsx tests/call-eligibility-verification.ts",
     "test:phase4a-live": "tsx tests/phase4a-live-validation.ts",
     "test:phase4b": "tsx tests/sarvam-unit-tests.ts",
-    "test:phase4b-live": "tsx tests/phase4b-live-validation.ts"
+    "test:phase4b-live": "tsx tests/phase4b-live-validation.ts",
+    "test:phase5a": "tsx tests/phase5a-transcript-ingestion.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
