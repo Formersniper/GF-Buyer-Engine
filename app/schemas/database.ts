@@ -181,4 +181,6 @@ export interface CallTranscript {
 export * from './extraction';
 export * from './qualification';
 export * from './scoring';
+export * from './matching';
+export * from './handoff';
 

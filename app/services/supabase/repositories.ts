@@ -33,6 +33,12 @@ import {
   BuyerQualification,
   BuyerScoreRecord,
   PriorityQueueItem,
+  DbBrokerHandoff,
+  BrokerHandoffPackage,
+  BrokerHandoffReadiness,
+  BrokerRoutingStatus,
+  BrokerDispatchStatus,
+  HandoffQueueItem,
 } from '../../schemas/database';
 import { GFBuyerLead, ProjectMatch as DomainProjectMatch } from '../../schemas/buyerLead';
 import { WorkflowStatus } from '../../schemas/workflow';
@@ -167,6 +173,17 @@ export interface BuyerQualificationsRepository {
   getQualificationsByLeadId(leadId: string): Promise<BuyerQualification[]>;
 }
 
+export interface BrokerHandoffRepository {
+  createHandoff(handoff: Omit<DbBrokerHandoff, 'id' | 'created_at' | 'updated_at'> & { id?: string }): Promise<DbBrokerHandoff>;
+  getHandoff(id: string): Promise<DbBrokerHandoff | null>;
+  getHandoffsByLeadId(leadId: string): Promise<DbBrokerHandoff[]>;
+  getHandoffByScoreId(scoreId: string, ruleVersion?: string): Promise<DbBrokerHandoff | null>;
+  getLatestHandoff(leadId: string): Promise<DbBrokerHandoff | null>;
+  updateStatus(id: string, handoffStatus: BrokerHandoffReadiness, routingStatus?: BrokerRoutingStatus): Promise<DbBrokerHandoff>;
+  updateDispatchStatus(id: string, dispatchStatus: BrokerDispatchStatus, dispatchId?: string, channel?: string): Promise<DbBrokerHandoff>;
+  listHandoffQueue(filter?: { tier?: string; status?: string; limit?: number }): Promise<HandoffQueueItem[]>;
+}
+
 // ==========================================
 // 2. IN-MEMORY & CLIENT BACKED STORE
 // ==========================================
@@ -184,6 +201,7 @@ class SupabaseDataService {
   private projectMatchesStore: Map<string, DbProjectMatch[]> = new Map();
   private buyerScoresStore: Map<string, BuyerScore[]> = new Map();
   private buyerScoreRecordsStore: Map<string, BuyerScoreRecord> = new Map();
+  private brokerHandoffsStore: Map<string, DbBrokerHandoff> = new Map();
   private leadEventsStore: Map<string, LeadEvent[]> = new Map();
 
 
@@ -1493,6 +1511,300 @@ class SupabaseDataService {
         }
       }
       return Array.from(this.qualificationsStore.values()).filter((q) => q.lead_id === leadId);
+    },
+  };
+
+  // --- Broker Handoffs (Phase 5F) ---
+  public brokerHandoffs: BrokerHandoffRepository = {
+    createHandoff: async (input) => {
+      const now = new Date().toISOString();
+      const id = input.id || this.generateUUID();
+      const record: DbBrokerHandoff = {
+        id,
+        lead_id: input.lead_id,
+        qualification_id: input.qualification_id ?? null,
+        score_id: input.score_id ?? null,
+        extraction_id: input.extraction_id ?? null,
+        transcript_id: input.transcript_id ?? null,
+        call_id: input.call_id ?? null,
+        handoff_payload: input.handoff_payload,
+        handoff_status: input.handoff_status,
+        routing_status: input.routing_status,
+        assigned_role: input.assigned_role ?? null,
+        assigned_team: input.assigned_team ?? null,
+        priority_tier: input.priority_tier,
+        sla_minutes: input.sla_minutes,
+        sla_deadline: input.sla_deadline,
+        dispatch_channel: input.dispatch_channel ?? null,
+        dispatch_status: input.dispatch_status ?? 'PENDING',
+        dispatch_id: input.dispatch_id ?? null,
+        handoff_version: input.handoff_version ?? '1.0',
+        rule_version: input.rule_version ?? '1.0',
+        created_at: now,
+        updated_at: now,
+      };
+
+      const client = getSupabaseClient();
+      if (client) {
+        try {
+          const { data: existing } = await client
+            .from('broker_handoffs')
+            .select('id')
+            .eq('score_id', record.score_id)
+            .eq('rule_version', record.rule_version)
+            .maybeSingle();
+
+          let query;
+          if (existing) {
+            query = client.from('broker_handoffs').update(record).eq('id', existing.id);
+          } else {
+            query = client.from('broker_handoffs').insert(record);
+          }
+          const { data, error } = await query.select().single();
+          if (!error && data) {
+            this.brokerHandoffsStore.set(data.id, data);
+            return data;
+          }
+        } catch {
+          // fallback to in-memory store
+        }
+      }
+
+      this.brokerHandoffsStore.set(record.id, record);
+      return record;
+    },
+
+    getHandoff: async (id: string) => {
+      const client = getSupabaseClient();
+      if (client) {
+        try {
+          const { data, error } = await client.from('broker_handoffs').select('*').eq('id', id).maybeSingle();
+          if (!error && data) return data;
+        } catch {
+          // fallback
+        }
+      }
+      return this.brokerHandoffsStore.get(id) || null;
+    },
+
+    getHandoffsByLeadId: async (leadId: string) => {
+      const client = getSupabaseClient();
+      if (client) {
+        try {
+          const { data, error } = await client
+            .from('broker_handoffs')
+            .select('*')
+            .eq('lead_id', leadId)
+            .order('created_at', { ascending: false });
+          if (!error && data) return data;
+        } catch {
+          // fallback
+        }
+      }
+      return Array.from(this.brokerHandoffsStore.values())
+        .filter((h) => h.lead_id === leadId)
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    },
+
+    getHandoffByScoreId: async (scoreId: string, ruleVersion?: string) => {
+      const client = getSupabaseClient();
+      if (client) {
+        try {
+          let query = client.from('broker_handoffs').select('*').eq('score_id', scoreId);
+          if (ruleVersion) {
+            query = query.eq('rule_version', ruleVersion);
+          }
+          const { data, error } = await query.order('created_at', { ascending: false }).limit(1);
+          if (!error && data && data.length > 0) return data[0];
+        } catch {
+          // fallback
+        }
+      }
+      return (
+        Array.from(this.brokerHandoffsStore.values())
+          .filter((h) => {
+            if (h.score_id !== scoreId) return false;
+            if (ruleVersion && h.rule_version !== ruleVersion) return false;
+            return true;
+          })
+          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0] || null
+      );
+    },
+
+    getLatestHandoff: async (leadId: string) => {
+      const handoffs = await this.brokerHandoffs.getHandoffsByLeadId(leadId);
+      return handoffs.length > 0 ? handoffs[0] : null;
+    },
+
+    updateStatus: async (id: string, handoffStatus: BrokerHandoffReadiness, routingStatus?: BrokerRoutingStatus) => {
+      const existing = await this.brokerHandoffs.getHandoff(id);
+      if (!existing) {
+        throw new Error(`Broker handoff with id ${id} not found.`);
+      }
+      const now = new Date().toISOString();
+      const updatedPayload = {
+        ...existing.handoff_payload,
+        handoff_status: handoffStatus,
+        routing_status: routingStatus || existing.routing_status,
+        updated_at: now,
+      };
+
+      const updatedRecord: DbBrokerHandoff = {
+        ...existing,
+        handoff_status: handoffStatus,
+        routing_status: routingStatus || existing.routing_status,
+        handoff_payload: updatedPayload,
+        updated_at: now,
+      };
+
+      const client = getSupabaseClient();
+      if (client) {
+        try {
+          const { data, error } = await client
+            .from('broker_handoffs')
+            .update(updatedRecord)
+            .eq('id', id)
+            .select()
+            .single();
+          if (!error && data) {
+            this.brokerHandoffsStore.set(data.id, data);
+            return data;
+          }
+        } catch {
+          // fallback
+        }
+      }
+
+      this.brokerHandoffsStore.set(id, updatedRecord);
+      return updatedRecord;
+    },
+
+    updateDispatchStatus: async (id: string, dispatchStatus: BrokerDispatchStatus, dispatchId?: string, channel?: string) => {
+      const existing = await this.brokerHandoffs.getHandoff(id);
+      if (!existing) {
+        throw new Error(`Broker handoff with id ${id} not found.`);
+      }
+      const now = new Date().toISOString();
+      const updatedPayload = {
+        ...existing.handoff_payload,
+        dispatch_status: dispatchStatus,
+        dispatch_id: dispatchId ?? existing.dispatch_id,
+        dispatch_channel: channel ?? existing.dispatch_channel,
+        updated_at: now,
+      };
+
+      const updatedRecord: DbBrokerHandoff = {
+        ...existing,
+        dispatch_status: dispatchStatus,
+        dispatch_id: dispatchId ?? existing.dispatch_id,
+        dispatch_channel: channel ?? existing.dispatch_channel,
+        handoff_payload: updatedPayload,
+        updated_at: now,
+      };
+
+      const client = getSupabaseClient();
+      if (client) {
+        try {
+          const { data, error } = await client
+            .from('broker_handoffs')
+            .update(updatedRecord)
+            .eq('id', id)
+            .select()
+            .single();
+          if (!error && data) {
+            this.brokerHandoffsStore.set(data.id, data);
+            return data;
+          }
+        } catch {
+          // fallback
+        }
+      }
+
+      this.brokerHandoffsStore.set(id, updatedRecord);
+      return updatedRecord;
+    },
+
+    listHandoffQueue: async (filter) => {
+      const tierRank = (tier: string): number => {
+        switch (tier) {
+          case 'TIER_1_HOT':
+            return 1;
+          case 'TIER_2_WARM':
+            return 2;
+          case 'TIER_3_NURTURE':
+            return 3;
+          case 'TIER_4_REVIEW':
+            return 4;
+          default:
+            return 5;
+        }
+      };
+
+      let handoffs = Array.from(this.brokerHandoffsStore.values());
+
+      if (filter?.tier) {
+        handoffs = handoffs.filter((h) => h.priority_tier === filter.tier);
+      }
+      if (filter?.status) {
+        handoffs = handoffs.filter((h) => h.handoff_status === filter.status);
+      }
+
+      const queueItems: HandoffQueueItem[] = [];
+
+      for (const h of handoffs) {
+        const payload = h.handoff_payload;
+        const lead = await this.leads.getLead(h.lead_id);
+        const topProj = payload?.project_recommendations?.[0];
+        const primaryReq = payload?.requirements?.[0];
+        const reqStr = primaryReq
+          ? `${primaryReq.property_type || 'Residential'} ${primaryReq.configuration || ''} in ${(primaryReq.preferred_locations || []).join(', ')}`.trim()
+          : 'Property requirement';
+
+        const deadline = new Date(h.sla_deadline).getTime();
+        const nowMs = Date.now();
+        const minsRemaining = Math.round((deadline - nowMs) / 60000);
+
+        queueItems.push({
+          handoff_id: h.id,
+          lead_id: h.lead_id,
+          external_lead_id: lead?.lead_id || payload?.external_lead_id || 'GF-UNK',
+          buyer_name: lead?.name || payload?.primary_buyer_summary?.name || 'Unknown Buyer',
+          phone: lead?.phone || payload?.primary_buyer_summary?.phone || '',
+          score: payload?.priority?.score ?? 0,
+          tier: h.priority_tier,
+          sla_deadline: h.sla_deadline,
+          sla_minutes_remaining: minsRemaining,
+          assigned_role: h.assigned_role || 'INBOUND_SALES_SPECIALIST',
+          assigned_team: h.assigned_team || 'INBOUND_SALES',
+          urgency: payload?.priority?.urgency || 'MEDIUM',
+          handoff_status: h.handoff_status,
+          routing_status: h.routing_status,
+          dispatch_status: h.dispatch_status,
+          primary_requirement: reqStr,
+          top_project: topProj ? `${topProj.project_name} (${topProj.match_score}% Match)` : null,
+          missing_information: payload?.missing_information || [],
+          recommended_action: payload?.recommended_action || 'Contact buyer',
+          created_at: h.created_at,
+        });
+      }
+
+      // Sort: Tier Priority ASC, SLA Deadline ASC, Score DESC, Created ASC
+      queueItems.sort((a, b) => {
+        const rankA = tierRank(a.tier);
+        const rankB = tierRank(b.tier);
+        if (rankA !== rankB) return rankA - rankB;
+        const deadlineA = new Date(a.sla_deadline).getTime();
+        const deadlineB = new Date(b.sla_deadline).getTime();
+        if (deadlineA !== deadlineB) return deadlineA - deadlineB;
+        if (b.score !== a.score) return b.score - a.score;
+        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      });
+
+      if (filter?.limit) {
+        return queueItems.slice(0, filter.limit);
+      }
+
+      return queueItems;
     },
   };
 

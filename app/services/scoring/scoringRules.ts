@@ -112,14 +112,16 @@ export class ScoringRulesEngine {
     let intentTruth: DataTruthLevel = 'UNKNOWN';
     let intentEvidence: string | null = null;
 
-    if (rawData.interested && typeof rawData.interested === 'object' && 'value' in rawData.interested) {
-      isInterested = rawData.interested.value;
-      intentTruth = (rawData.interested.truth_level as DataTruthLevel) || 'UNKNOWN';
-      intentEvidence = rawData.interested.evidence || null;
-    } else if (rawData.buying_intent) {
-      isInterested = rawData.buying_intent.interested;
+    const rawInt = rawData.interested ?? rawData.buying_intent?.interested;
+    if (rawInt && typeof rawInt === 'object' && 'value' in rawInt) {
+      isInterested = rawInt.value;
+      const rawTl = rawInt.truth_level;
+      intentTruth = (rawTl === 'EXPLICIT' || rawTl === 'CONFIRMED') ? 'CONFIRMED' : (rawTl as DataTruthLevel) || 'UNKNOWN';
+      intentEvidence = rawInt.evidence ? (Array.isArray(rawInt.evidence) ? rawInt.evidence.join(', ') : rawInt.evidence) : null;
+    } else if (rawInt !== undefined) {
+      isInterested = typeof rawInt === 'boolean' ? rawInt : null;
       intentTruth = (rawData.truth_summary?.interested as DataTruthLevel) || 'CONFIRMED';
-      intentEvidence = rawData.buying_intent.interested_evidence || null;
+      intentEvidence = rawData.buying_intent?.interested_evidence || null;
     }
 
     // 2. Budget
@@ -130,36 +132,28 @@ export class ScoringRulesEngine {
     let budgetEvidence: string | null = null;
     let financing: string | null = null;
 
-    if (rawData.budget) {
-      bMin = rawData.budget.min ?? null;
-      bMax = rawData.budget.max ?? null;
-      bRawExpr = rawData.budget.raw_expression || rawData.budget.qualitative_budget || null;
-      const rawBudgetTruth = rawData.budget.truth_level || rawData.truth_summary?.budget;
+    const rawB = rawData.budget ?? rawData.buying_intent?.budget;
+    if (rawB) {
+      const bObj = (typeof rawB === 'object' && rawB !== null && 'value' in rawB) ? rawB.value : rawB;
+      bMin = bObj?.min ?? null;
+      bMax = bObj?.max ?? null;
+      bRawExpr = bObj?.raw_expression || bObj?.qualitative_budget || (typeof bObj === 'string' ? bObj : null);
+      const rawBudgetTruth = (typeof rawB === 'object' && rawB !== null && rawB.truth_level) ? rawB.truth_level : rawData.truth_summary?.budget;
       if (rawBudgetTruth === 'CONFLICTED') {
         isConflicted = true;
         budgetTruth = 'UNKNOWN';
       } else {
-        budgetTruth = (rawBudgetTruth as DataTruthLevel) || 'UNKNOWN';
+        const mappedTl = (rawBudgetTruth === 'EXPLICIT' || rawBudgetTruth === 'CONFIRMED') ? 'CONFIRMED' : rawBudgetTruth;
+        budgetTruth = (mappedTl as DataTruthLevel) || (bMin ? 'CONFIRMED' : 'UNKNOWN');
       }
-      budgetEvidence = rawData.budget.evidence || null;
-    } else if (rawData.buying_intent?.budget) {
-      bMin = rawData.buying_intent.budget.min ?? null;
-      bMax = rawData.buying_intent.budget.max ?? null;
-      bRawExpr = rawData.buying_intent.budget.qualitative_budget || null;
-      const rawBudgetTruth = rawData.truth_summary?.budget;
-      if (rawBudgetTruth === 'CONFLICTED') {
-        isConflicted = true;
-        budgetTruth = 'UNKNOWN';
-      } else {
-        budgetTruth = (rawBudgetTruth as DataTruthLevel) || (bMin ? 'CONFIRMED' : 'UNKNOWN');
-      }
-      budgetEvidence = rawData.buying_intent.budget.evidence || null;
+      budgetEvidence = (typeof rawB === 'object' && rawB !== null && rawB.evidence) ? (Array.isArray(rawB.evidence) ? rawB.evidence.join(', ') : rawB.evidence) : (rawData.buying_intent?.budget?.evidence || null);
     }
 
     if (rawData.financing && typeof rawData.financing === 'object' && 'value' in rawData.financing) {
       financing = rawData.financing.value;
     } else if (rawData.buying_intent?.financing) {
-      financing = rawData.buying_intent.financing;
+      const rawFin = rawData.buying_intent.financing;
+      financing = typeof rawFin === 'object' && rawFin !== null && 'value' in rawFin ? rawFin.value : rawFin;
     }
 
     // 3. Timeline
@@ -167,14 +161,13 @@ export class ScoringRulesEngine {
     let timelineTruth: DataTruthLevel = 'UNKNOWN';
     let timelineEvidence: string | null = null;
 
-    if (rawData.timeline && typeof rawData.timeline === 'object' && 'value' in rawData.timeline) {
-      timelineVal = rawData.timeline.value;
-      timelineTruth = (rawData.timeline.truth_level as DataTruthLevel) || 'UNKNOWN';
-      timelineEvidence = rawData.timeline.evidence || null;
-    } else if (rawData.buying_intent?.timeline) {
-      timelineVal = rawData.buying_intent.timeline;
-      timelineTruth = (rawData.truth_summary?.timeline as DataTruthLevel) || 'CONFIRMED';
-      timelineEvidence = rawData.buying_intent.timeline_evidence || null;
+    const rawT = rawData.timeline ?? rawData.buying_intent?.timeline;
+    if (rawT) {
+      timelineVal = typeof rawT === 'object' && rawT !== null && 'value' in rawT ? rawT.value : (typeof rawT === 'string' ? rawT : null);
+      const rawTTruth = (typeof rawT === 'object' && rawT !== null && rawT.truth_level) ? rawT.truth_level : rawData.truth_summary?.timeline;
+      const mappedT = (rawTTruth === 'EXPLICIT' || rawTTruth === 'CONFIRMED') ? 'CONFIRMED' : rawTTruth;
+      timelineTruth = (mappedT as DataTruthLevel) || 'CONFIRMED';
+      timelineEvidence = (typeof rawT === 'object' && rawT !== null && rawT.evidence) ? (Array.isArray(rawT.evidence) ? rawT.evidence.join(', ') : rawT.evidence) : (rawData.buying_intent?.timeline_evidence || null);
     }
 
     // 4. Locations, Type, Config, Requirements
@@ -182,36 +175,27 @@ export class ScoringRulesEngine {
     let locationTruth: DataTruthLevel = 'UNKNOWN';
     let locationEvidence: string | null = null;
 
-    if (rawData.preferred_locations && typeof rawData.preferred_locations === 'object' && 'value' in rawData.preferred_locations) {
-      preferredLocations = Array.isArray(rawData.preferred_locations.value) ? rawData.preferred_locations.value : [];
-      locationTruth = (rawData.preferred_locations.truth_level as DataTruthLevel) || 'UNKNOWN';
-      locationEvidence = rawData.preferred_locations.evidence || null;
-    } else if (rawData.buying_intent?.preferred_locations) {
-      preferredLocations = rawData.buying_intent.preferred_locations;
-      locationTruth = (rawData.truth_summary?.preferred_locations as DataTruthLevel) || 'CONFIRMED';
-      locationEvidence = preferredLocations.join(', ');
+    const rawL = rawData.preferred_locations ?? rawData.buying_intent?.preferred_locations;
+    if (rawL) {
+      const locVal = typeof rawL === 'object' && rawL !== null && 'value' in rawL ? rawL.value : rawL;
+      preferredLocations = Array.isArray(locVal) ? locVal : [];
+      const rawLTruth = (typeof rawL === 'object' && rawL !== null && rawL.truth_level) ? rawL.truth_level : rawData.truth_summary?.preferred_locations;
+      const mappedL = (rawLTruth === 'EXPLICIT' || rawLTruth === 'CONFIRMED') ? 'CONFIRMED' : rawLTruth;
+      locationTruth = (mappedL as DataTruthLevel) || 'CONFIRMED';
+      locationEvidence = (typeof rawL === 'object' && rawL !== null && rawL.evidence) ? (Array.isArray(rawL.evidence) ? rawL.evidence.join(', ') : rawL.evidence) : preferredLocations.join(', ');
     }
 
     let primaryPropertyType: string | null = null;
-    if (rawData.primary_property_type && typeof rawData.primary_property_type === 'object' && 'value' in rawData.primary_property_type) {
-      primaryPropertyType = rawData.primary_property_type.value;
-    } else if (rawData.buying_intent?.property_type) {
-      primaryPropertyType = rawData.buying_intent.property_type;
-    }
+    const rawProp = rawData.primary_property_type ?? rawData.buying_intent?.property_type;
+    primaryPropertyType = typeof rawProp === 'object' && rawProp !== null && 'value' in rawProp ? rawProp.value : (typeof rawProp === 'string' ? rawProp : null);
 
     let primaryConfig: string | null = null;
-    if (rawData.primary_configuration && typeof rawData.primary_configuration === 'object' && 'value' in rawData.primary_configuration) {
-      primaryConfig = rawData.primary_configuration.value;
-    } else if (rawData.buying_intent?.configuration) {
-      primaryConfig = rawData.buying_intent.configuration;
-    }
+    const rawCfg = rawData.primary_configuration ?? rawData.buying_intent?.configuration;
+    primaryConfig = typeof rawCfg === 'object' && rawCfg !== null && 'value' in rawCfg ? rawCfg.value : (typeof rawCfg === 'string' ? rawCfg : null);
 
     let primaryPurpose: string | null = null;
-    if (rawData.purpose && typeof rawData.purpose === 'object' && 'value' in rawData.purpose) {
-      primaryPurpose = rawData.purpose.value;
-    } else if (rawData.buying_intent?.purpose) {
-      primaryPurpose = rawData.buying_intent.purpose;
-    }
+    const rawPurp = rawData.purpose ?? rawData.buying_intent?.purpose;
+    primaryPurpose = typeof rawPurp === 'object' && rawPurp !== null && 'value' in rawPurp ? rawPurp.value : (typeof rawPurp === 'string' ? rawPurp : null);
 
     const requirements = Array.isArray(rawData.requirements) ? rawData.requirements : [];
 
@@ -219,14 +203,13 @@ export class ScoringRulesEngine {
     let decisionMakerVal: any = null;
     let decisionMakerTruth: DataTruthLevel = 'UNKNOWN';
     let decisionMakerEvidence: string | null = null;
-
-    if (rawData.decision_maker && typeof rawData.decision_maker === 'object' && 'value' in rawData.decision_maker) {
-      decisionMakerVal = rawData.decision_maker.value;
-      decisionMakerTruth = (rawData.decision_maker.truth_level as DataTruthLevel) || 'UNKNOWN';
-      decisionMakerEvidence = rawData.decision_maker.evidence || null;
-    } else if (rawData.buying_intent?.decision_maker !== undefined) {
-      decisionMakerVal = rawData.buying_intent.decision_maker;
-      decisionMakerTruth = (rawData.truth_summary?.decision_maker as DataTruthLevel) || 'UNKNOWN';
+    const rawDM = rawData.decision_maker ?? rawData.buying_intent?.decision_maker;
+    if (rawDM !== undefined && rawDM !== null) {
+      decisionMakerVal = typeof rawDM === 'object' && 'value' in rawDM ? rawDM.value : rawDM;
+      const rawDMTruth = (typeof rawDM === 'object' && rawDM.truth_level) ? rawDM.truth_level : rawData.truth_summary?.decision_maker;
+      const mappedDM = (rawDMTruth === 'EXPLICIT' || rawDMTruth === 'CONFIRMED') ? 'CONFIRMED' : rawDMTruth;
+      decisionMakerTruth = (mappedDM as DataTruthLevel) || 'UNKNOWN';
+      decisionMakerEvidence = typeof rawDM === 'object' && rawDM.evidence ? (Array.isArray(rawDM.evidence) ? rawDM.evidence.join(', ') : rawDM.evidence) : null;
     }
 
     // ==========================================

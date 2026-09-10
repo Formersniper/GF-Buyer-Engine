@@ -19,7 +19,8 @@
     "test:phase5c": "tsx tests/phase5c-buyer-qualification.ts",
     "test:phase5d": "tsx tests/phase5d-buyer-scoring.ts",
     "test:phase5e": "tsx tests/phase5e-project-matching.ts",
-    "test:all": "npm run test:phase4a && npm run test:phase4b && npm run test:phase5a && npm run test:phase5b && npm run test:phase5c && npm run test:phase5d && npm run test:phase5e"
+    "test:phase5f": "tsx tests/phase5f-broker-handoff.ts",
+    "test:all": "npm run test:phase4a && npm run test:phase4b && npm run test:phase5a && npm run test:phase5b && npm run test:phase5c && npm run test:phase5d && npm run test:phase5e && npm run test:phase5f"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

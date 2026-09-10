@@ -11,6 +11,7 @@ import { conversationExtractionService } from './app/services/gemini/conversatio
 import { buyerQualificationService } from './app/services/qualification/buyerQualificationService';
 import { buyerScoringService } from './app/services/scoring/buyerScoringService';
 import { projectMatchingService } from './app/services/matching/projectMatchingService';
+import { brokerHandoffService } from './app/services/handoff/brokerHandoffService';
 import { matchingAgent } from './app/agents/MatchingAgent';
 
 async function startServer() {
@@ -357,6 +358,101 @@ async function startServer() {
       res.json(projects);
     } catch (err: unknown) {
       res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to get projects' });
+    }
+  });
+
+  // ========================================================
+  // PHASE 5F — BROKER HANDOFF & CRM ROUTING ENDPOINTS
+  // ========================================================
+
+  // Create or return existing Broker Handoff Package
+  app.post('/api/handoff/create', async (req, res) => {
+    try {
+      const { leadId, qualificationId, scoreId, forceRegenerate, ruleVersion } = req.body;
+      if (!leadId) {
+        return res.status(400).json({ error: 'leadId is required' });
+      }
+      const result = await brokerHandoffService.generateHandoff({
+        leadId,
+        qualificationId,
+        scoreId,
+        forceRegenerate,
+        ruleVersion,
+      });
+
+      if (!result.success) {
+        return res.status(400).json(result);
+      }
+      res.json(result);
+    } catch (err: unknown) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Broker handoff creation failed' });
+    }
+  });
+
+  // Get Priority Broker Handoff Queue (Deterministically Ordered)
+  app.get('/api/handoff/queue', async (req, res) => {
+    try {
+      const { tier, status, limit } = req.query;
+      const queue = await brokerHandoffService.getHandoffQueue({
+        tier: typeof tier === 'string' ? tier : undefined,
+        status: typeof status === 'string' ? status : undefined,
+        limit: limit ? Number(limit) : undefined,
+      });
+      res.json(queue);
+    } catch (err: unknown) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to retrieve handoff queue' });
+    }
+  });
+
+  // Get Broker Handoff by Handoff ID
+  app.get('/api/handoff/:id', async (req, res) => {
+    try {
+      const handoff = await brokerHandoffService.getHandoff(req.params.id);
+      if (!handoff) {
+        return res.status(404).json({ error: `Handoff with id ${req.params.id} not found` });
+      }
+      res.json(handoff);
+    } catch (err: unknown) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to retrieve handoff' });
+    }
+  });
+
+  // Get Broker Handoffs for a Lead
+  app.get('/api/handoff/lead/:leadId', async (req, res) => {
+    try {
+      const handoffs = await supabaseDataService.brokerHandoffs.getHandoffsByLeadId(req.params.leadId);
+      res.json(handoffs);
+    } catch (err: unknown) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to retrieve handoffs for lead' });
+    }
+  });
+
+  // Dispatch Broker Handoff (Mock / Dry-Run Safe by Default)
+  app.post('/api/handoff/:id/dispatch', async (req, res) => {
+    try {
+      const { channel, dryRun = true, forceRedispatch } = req.body;
+      const result = await brokerHandoffService.dispatchHandoff(req.params.id, {
+        channel,
+        dryRun,
+        forceRedispatch,
+      });
+      res.json(result);
+    } catch (err: unknown) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Dispatch failed' });
+    }
+  });
+
+  // Acknowledge Broker Handoff Receipt
+  app.post('/api/handoff/:id/acknowledge', async (req, res) => {
+    try {
+      const { acknowledgedBy, notes } = req.body;
+      const updated = await brokerHandoffService.acknowledgeHandoff(req.params.id, {
+        acknowledgedBy,
+        notes,
+      });
+      res.json(updated);
+    } catch (err: unknown) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Acknowledgment failed' });
     }
   });
 
