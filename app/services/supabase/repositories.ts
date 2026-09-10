@@ -29,6 +29,7 @@ import {
   LeadEvent,
   CallTranscript,
   TranscriptTurn,
+  ConversationExtraction,
 } from '../../schemas/database';
 import { GFBuyerLead, ProjectMatch as DomainProjectMatch } from '../../schemas/buyerLead';
 import { WorkflowStatus } from '../../schemas/workflow';
@@ -100,6 +101,14 @@ export interface CallTranscriptsRepository {
   getTranscriptsByLeadId(leadId: string): Promise<CallTranscript[]>;
 }
 
+export interface ConversationExtractionsRepository {
+  createExtraction(extraction: Omit<ConversationExtraction, 'id' | 'created_at' | 'updated_at'> & { id?: string }): Promise<ConversationExtraction>;
+  getExtraction(id: string): Promise<ConversationExtraction | null>;
+  getExtractionByTranscriptId(transcriptId: string, schemaVersion?: string, promptVersion?: string): Promise<ConversationExtraction | null>;
+  getExtractionByCallId(callId: string): Promise<ConversationExtraction | null>;
+  getExtractionsByLeadId(leadId: string): Promise<ConversationExtraction[]>;
+}
+
 // ==========================================
 // 2. IN-MEMORY & CLIENT BACKED STORE
 // ==========================================
@@ -109,12 +118,14 @@ class SupabaseDataService {
   private enrichmentStore: Map<string, LeadEnrichment[]> = new Map();
   private callsStore: Map<string, Call> = new Map();
   private transcriptsStore: Map<string, CallTranscript> = new Map();
+  private extractionsStore: Map<string, ConversationExtraction> = new Map();
   private buyerProfilesStore: Map<string, BuyerProfile> = new Map();
   private buyerPreferencesStore: Map<string, BuyerPreference[]> = new Map();
   private projectsStore: Map<string, DbProject> = new Map();
   private projectMatchesStore: Map<string, DbProjectMatch[]> = new Map();
   private buyerScoresStore: Map<string, BuyerScore[]> = new Map();
   private leadEventsStore: Map<string, LeadEvent[]> = new Map();
+
 
   constructor() {
     this.seedDefaultProjects();
@@ -1050,6 +1061,129 @@ class SupabaseDataService {
         }
       }
       return Array.from(this.transcriptsStore.values()).filter((t) => t.lead_id === leadId);
+    },
+  };
+
+  public extractions: ConversationExtractionsRepository = {
+    createExtraction: async (extraction) => {
+      const now = new Date().toISOString();
+      const record: ConversationExtraction = {
+        id: extraction.id || this.generateUUID(),
+        lead_id: extraction.lead_id,
+        call_id: extraction.call_id,
+        transcript_id: extraction.transcript_id,
+        provider_call_id: extraction.provider_call_id ?? null,
+        interaction_id: extraction.interaction_id ?? null,
+        model: extraction.model,
+        prompt_version: extraction.prompt_version ?? '1.0',
+        schema_version: extraction.schema_version ?? '1.0',
+        extraction_status: extraction.extraction_status ?? 'EXTRACTED',
+        extracted_data: extraction.extracted_data ?? null,
+        raw_gemini_response: extraction.raw_gemini_response ?? null,
+        error_message: extraction.error_message ?? null,
+        created_at: now,
+        updated_at: now,
+      };
+
+      const client = getSupabaseClient();
+      if (client) {
+        try {
+          const { data, error } = await client.from('conversation_extractions').insert(record).select().single();
+          if (!error && data) {
+            this.extractionsStore.set(data.id, data);
+            return data;
+          }
+          if (error) {
+            console.warn('[Supabase Insert Error] conversation_extractions fallback to in-memory:', error.message);
+          }
+        } catch (err) {
+          console.warn('[Supabase Insert Exception] conversation_extractions fallback:', err);
+        }
+      }
+
+      this.extractionsStore.set(record.id, record);
+      return record;
+    },
+
+    getExtraction: async (id: string) => {
+      const client = getSupabaseClient();
+      if (client) {
+        try {
+          const { data, error } = await client.from('conversation_extractions').select('*').eq('id', id).maybeSingle();
+          if (!error && data) return data;
+        } catch {
+          // ignore and fallback
+        }
+      }
+      return this.extractionsStore.get(id) || null;
+    },
+
+    getExtractionByTranscriptId: async (transcriptId: string, schemaVersion?: string, promptVersion?: string) => {
+      const client = getSupabaseClient();
+      if (client) {
+        try {
+          let query = client.from('conversation_extractions').select('*').eq('transcript_id', transcriptId);
+          if (schemaVersion) {
+            query = query.eq('schema_version', schemaVersion);
+          }
+          if (promptVersion) {
+            query = query.eq('prompt_version', promptVersion);
+          }
+          const { data, error } = await query.order('created_at', { ascending: false }).limit(1);
+          if (!error && data && data.length > 0) return data[0];
+        } catch {
+          // ignore and fallback
+        }
+      }
+      return (
+        Array.from(this.extractionsStore.values())
+          .filter((e) => {
+            if (e.transcript_id !== transcriptId) return false;
+            if (schemaVersion && e.schema_version !== schemaVersion) return false;
+            if (promptVersion && e.prompt_version !== promptVersion) return false;
+            return true;
+          })
+          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0] || null
+      );
+    },
+
+    getExtractionByCallId: async (callId: string) => {
+      const client = getSupabaseClient();
+      if (client) {
+        try {
+          const { data, error } = await client
+            .from('conversation_extractions')
+            .select('*')
+            .eq('call_id', callId)
+            .order('created_at', { ascending: false })
+            .limit(1);
+          if (!error && data && data.length > 0) return data[0];
+        } catch {
+          // ignore and fallback
+        }
+      }
+      return (
+        Array.from(this.extractionsStore.values())
+          .filter((e) => e.call_id === callId)
+          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0] || null
+      );
+    },
+
+    getExtractionsByLeadId: async (leadId: string) => {
+      const client = getSupabaseClient();
+      if (client) {
+        try {
+          const { data, error } = await client
+            .from('conversation_extractions')
+            .select('*')
+            .eq('lead_id', leadId)
+            .order('created_at', { ascending: true });
+          if (!error && data) return data;
+        } catch {
+          // ignore and fallback
+        }
+      }
+      return Array.from(this.extractionsStore.values()).filter((e) => e.lead_id === leadId);
     },
   };
 

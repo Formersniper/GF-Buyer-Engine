@@ -7,6 +7,7 @@ import { processSarvamWebhook } from './app/services/voice/sarvamWebhook';
 import { transcriptIngestionService } from './app/services/voice/transcriptIngestionService';
 import { supabaseDataService } from './app/services/supabase/repositories';
 import { scoutAdapter } from './app/services/scout/scoutAdapter';
+import { conversationExtractionService } from './app/services/gemini/conversationExtractionService';
 
 async function startServer() {
   const app = express();
@@ -103,6 +104,52 @@ async function startServer() {
       res.json(result);
     } catch (err: unknown) {
       res.status(500).json({ error: err instanceof Error ? err.message : 'Transcript ingestion failed' });
+    }
+  });
+
+  // Extract Structured Buyer Intelligence (Phase 5B)
+  app.post('/api/voice/extractions/extract', async (req, res) => {
+    try {
+      const result = await conversationExtractionService.extractFromTranscript(req.body);
+      res.json(result);
+    } catch (err: unknown) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Structured extraction failed' });
+    }
+  });
+
+  // Call Extraction Retrieval (Phase 5B)
+  app.get('/api/voice/extractions/call/:callId', async (req, res) => {
+    try {
+      const extraction = await conversationExtractionService.getExtractionByCallId(req.params.callId);
+      if (!extraction) {
+        return res.status(404).json({ error: 'Extraction not found for this call' });
+      }
+      res.json(extraction);
+    } catch (err: unknown) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to get extraction' });
+    }
+  });
+
+  // Transcript Extraction Retrieval (Phase 5B)
+  app.get('/api/voice/extractions/transcript/:transcriptId', async (req, res) => {
+    try {
+      const extraction = await conversationExtractionService.getExtractionByTranscriptId(req.params.transcriptId);
+      if (!extraction) {
+        return res.status(404).json({ error: 'Extraction not found for this transcript' });
+      }
+      res.json(extraction);
+    } catch (err: unknown) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to get extraction' });
+    }
+  });
+
+  // Lead Extractions Retrieval (Phase 5B)
+  app.get('/api/voice/extractions/lead/:leadId', async (req, res) => {
+    try {
+      const extractions = await conversationExtractionService.getExtractionsByLeadId(req.params.leadId);
+      res.json(extractions);
+    } catch (err: unknown) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to get extractions' });
     }
   });
 

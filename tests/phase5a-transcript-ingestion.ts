@@ -61,7 +61,7 @@ async function runPhase5aTests() {
   const call1 = await supabaseDataService.calls.createCall({
     lead_id: lead1.id,
     provider: 'sarvam',
-    provider_call_id: `sarvam-outbound-test-5a-001`,
+    provider_call_id: `sarvam-outbound-test-5a-001-${Date.now()}`,
     status: 'COMPLETED',
     duration_seconds: 145,
     started_at: new Date(Date.now() - 150000).toISOString(),
@@ -81,7 +81,7 @@ async function runPhase5aTests() {
   const call2 = await supabaseDataService.calls.createCall({
     lead_id: lead2.id,
     provider: 'sarvam',
-    provider_call_id: `sarvam-outbound-test-5a-002`,
+    provider_call_id: `sarvam-outbound-test-5a-002-${Date.now()}`,
     status: 'COMPLETED',
     duration_seconds: 98,
   });
@@ -172,7 +172,7 @@ async function runPhase5aTests() {
   const call3 = await supabaseDataService.calls.createCall({
     lead_id: lead3.id,
     provider: 'sarvam',
-    provider_call_id: `sarvam-outbound-webhook-5a-003`,
+    provider_call_id: `sarvam-outbound-webhook-5a-003-${Date.now()}`,
     status: 'CONNECTED',
   });
 

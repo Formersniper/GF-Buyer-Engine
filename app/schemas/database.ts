@@ -177,3 +177,6 @@ export interface CallTranscript {
   created_at: string;
   updated_at: string;
 }
+
+export * from './extraction';
+
