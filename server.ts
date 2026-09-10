@@ -9,6 +9,7 @@ import { supabaseDataService } from './app/services/supabase/repositories';
 import { scoutAdapter } from './app/services/scout/scoutAdapter';
 import { conversationExtractionService } from './app/services/gemini/conversationExtractionService';
 import { buyerQualificationService } from './app/services/qualification/buyerQualificationService';
+import { buyerScoringService } from './app/services/scoring/buyerScoringService';
 
 async function startServer() {
   const app = express();
@@ -220,6 +221,91 @@ async function startServer() {
       res.json(qualifications);
     } catch (err: unknown) {
       res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to get qualifications' });
+    }
+  });
+
+  // --- BUYER SCORING & PRIORITIZATION ENDPOINTS (Phase 5D) ---
+
+  // Score Buyer
+  app.post('/api/scoring/score', async (req, res) => {
+    try {
+      const { qualificationId, leadId, forceRescore, ruleVersion } = req.body;
+      if (!qualificationId && !leadId) {
+        return res.status(400).json({ error: 'Either qualificationId or leadId is required' });
+      }
+
+      let result;
+      if (qualificationId) {
+        result = await buyerScoringService.scoreQualification({
+          qualificationId,
+          forceRescore,
+          ruleVersion,
+        });
+      } else {
+        result = await buyerScoringService.scoreLead({
+          leadId,
+          forceRescore,
+          ruleVersion,
+        });
+      }
+
+      res.json(result);
+    } catch (err: unknown) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Buyer scoring failed' });
+    }
+  });
+
+  // Get Prioritized Dispatch Queue (Phase 5D)
+  app.get('/api/scoring/queue/priority', async (req, res) => {
+    try {
+      const { tier, limit } = req.query;
+      const queue = await buyerScoringService.getPriorityQueue({
+        tier: typeof tier === 'string' ? tier : undefined,
+        limit: limit ? parseInt(limit as string, 10) : undefined,
+      });
+      res.json(queue);
+    } catch (err: unknown) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to get priority queue' });
+    }
+  });
+
+  // Get Score Record by ID (Phase 5D)
+  app.get('/api/scoring/:id', async (req, res) => {
+    try {
+      const score = await supabaseDataService.buyerScores.getBuyerScore(req.params.id);
+      if (!score) {
+        return res.status(404).json({ error: 'Score record not found' });
+      }
+      res.json(score);
+    } catch (err: unknown) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to get score record' });
+    }
+  });
+
+  // Get Score Record by Qualification ID (Phase 5D)
+  app.get('/api/scoring/qualification/:qualificationId', async (req, res) => {
+    try {
+      const score = await supabaseDataService.buyerScores.getBuyerScoreByQualificationId(
+        req.params.qualificationId
+      );
+      if (!score) {
+        return res.status(404).json({ error: 'Score not found for this qualification' });
+      }
+      res.json(score);
+    } catch (err: unknown) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to get score' });
+    }
+  });
+
+  // Get Score Records by Lead ID (Phase 5D)
+  app.get('/api/scoring/lead/:leadId', async (req, res) => {
+    try {
+      const scores = await supabaseDataService.buyerScores.getBuyerScoresByLeadId(
+        req.params.leadId
+      );
+      res.json(scores);
+    } catch (err: unknown) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to get scores' });
     }
   });
 

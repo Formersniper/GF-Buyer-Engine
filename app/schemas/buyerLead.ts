@@ -84,6 +84,8 @@ export interface GFBuyerLead {
       min: number | null;
       max: number | null;
       currency: string;
+      qualitative_budget?: string | null;
+      raw_expression?: string | null;
     };
 
     preferred_locations: string[];

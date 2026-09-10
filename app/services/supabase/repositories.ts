@@ -31,6 +31,8 @@ import {
   TranscriptTurn,
   ConversationExtraction,
   BuyerQualification,
+  BuyerScoreRecord,
+  PriorityQueueItem,
 } from '../../schemas/database';
 import { GFBuyerLead, ProjectMatch as DomainProjectMatch } from '../../schemas/buyerLead';
 import { WorkflowStatus } from '../../schemas/workflow';
@@ -63,7 +65,7 @@ export interface CallsRepository {
 }
 
 export interface BuyerProfilesRepository {
-  upsertBuyerProfile(profile: Omit<BuyerProfile, 'id' | 'created_at' | 'updated_at'> & { id?: string }): Promise<BuyerProfile>;
+  upsertBuyerProfile(profile: Partial<Omit<BuyerProfile, 'id' | 'created_at' | 'updated_at'>> & { lead_id: string; id?: string }): Promise<BuyerProfile>;
   getBuyerProfile(leadId: string): Promise<BuyerProfile | null>;
 }
 
@@ -86,7 +88,13 @@ export interface ProjectMatchesRepository {
 
 export interface BuyerScoresRepository {
   createBuyerScore(score: Omit<BuyerScore, 'id' | 'created_at'> & { id?: string }): Promise<BuyerScore>;
+  createBuyerScoreRecord(score: Omit<BuyerScoreRecord, 'id' | 'created_at' | 'updated_at'> & { id?: string }): Promise<BuyerScoreRecord>;
+  getBuyerScore(id: string): Promise<BuyerScoreRecord | null>;
+  getBuyerScoreByQualificationId(qualificationId: string, ruleVersion?: string): Promise<BuyerScoreRecord | null>;
+  getBuyerScoresByLeadId(leadId: string): Promise<BuyerScoreRecord[]>;
   getLatestBuyerScore(leadId: string): Promise<BuyerScore | null>;
+  getLatestBuyerScoreRecord(leadId: string): Promise<BuyerScoreRecord | null>;
+  listPriorityQueue(filter?: { tier?: string; limit?: number }): Promise<PriorityQueueItem[]>;
 }
 
 export interface LeadEventsRepository {
@@ -174,6 +182,7 @@ class SupabaseDataService {
   private projectsStore: Map<string, DbProject> = new Map();
   private projectMatchesStore: Map<string, DbProjectMatch[]> = new Map();
   private buyerScoresStore: Map<string, BuyerScore[]> = new Map();
+  private buyerScoreRecordsStore: Map<string, BuyerScoreRecord> = new Map();
   private leadEventsStore: Map<string, LeadEvent[]> = new Map();
 
 
@@ -930,6 +939,146 @@ class SupabaseDataService {
       return record;
     },
 
+    createBuyerScoreRecord: async (input) => {
+      const client = getSupabaseClient();
+      const now = new Date().toISOString();
+      const id = input.id || this.generateUUID();
+      const compScore = input.score ?? input.composite_score ?? input.total_score ?? 0;
+      const record: BuyerScoreRecord = {
+        id,
+        lead_id: input.lead_id,
+        qualification_id: input.qualification_id ?? null,
+        extraction_id: input.extraction_id ?? null,
+        score: compScore,
+        composite_score: compScore,
+        total_score: compScore,
+        scoring_confidence: input.scoring_confidence ?? 0.85,
+        tier: input.tier,
+        score_band: input.score_band,
+        score_status: input.score_status ?? (input.tier === 'TIER_4_REVIEW' ? 'REQUIRES_REVIEW' : 'CALCULATED'),
+        dimension_scores: input.dimension_scores,
+        components: input.components ?? input.breakdown ?? [],
+        breakdown: input.breakdown ?? input.components ?? [],
+        key_drivers: input.key_drivers ?? [],
+        risk_factors: input.risk_factors ?? [],
+        reason_codes: input.reason_codes ?? [],
+        sla_dispatch: input.sla_dispatch,
+        project_fit_status: input.project_fit_status ?? 'PENDING',
+        scoring_version: input.scoring_version ?? '1.0',
+        rule_version: input.rule_version ?? '1.0',
+        calculated_at: input.calculated_at ?? now,
+        created_at: now,
+        updated_at: now,
+      };
+
+      if (client) {
+        try {
+          const { data: existing } = await client
+            .from('buyer_scores')
+            .select('id')
+            .eq('qualification_id', record.qualification_id)
+            .eq('rule_version', record.rule_version)
+            .maybeSingle();
+
+          // Prepare clean payload matching database columns
+          const dbPayload = {
+            id: existing ? existing.id : record.id,
+            lead_id: record.lead_id,
+            qualification_id: record.qualification_id,
+            extraction_id: record.extraction_id,
+            composite_score: record.composite_score,
+            scoring_confidence: record.scoring_confidence,
+            tier: record.tier,
+            dimension_scores: record.dimension_scores,
+            breakdown: record.breakdown,
+            key_drivers: record.key_drivers,
+            risk_factors: record.risk_factors,
+            sla_dispatch: record.sla_dispatch,
+            scoring_version: record.scoring_version,
+            rule_version: record.rule_version,
+            created_at: record.created_at,
+            updated_at: record.updated_at,
+          };
+
+          let query;
+          if (existing) {
+            query = client.from('buyer_scores').update(dbPayload).eq('id', existing.id);
+          } else {
+            query = client.from('buyer_scores').insert(dbPayload);
+          }
+          const { data, error } = await query.select().single();
+          if (!error && data) {
+            const mergedRecord: BuyerScoreRecord = { ...record, ...data };
+            this.buyerScoreRecordsStore.set(mergedRecord.id, mergedRecord);
+            return mergedRecord;
+          }
+          if (error) {
+            console.warn('[Supabase Insert Error] buyer_scores fallback to in-memory:', error.message);
+          }
+        } catch (err) {
+          console.warn('[Supabase Insert Exception] buyer_scores fallback:', err);
+        }
+      }
+
+      this.buyerScoreRecordsStore.set(record.id, record);
+      return record;
+    },
+
+    getBuyerScore: async (id: string) => {
+      const client = getSupabaseClient();
+      if (client) {
+        try {
+          const { data, error } = await client.from('buyer_scores').select('*').eq('id', id).maybeSingle();
+          if (!error && data) return data;
+        } catch {
+          // ignore and fallback
+        }
+      }
+      return this.buyerScoreRecordsStore.get(id) || null;
+    },
+
+    getBuyerScoreByQualificationId: async (qualificationId: string, ruleVersion?: string) => {
+      const client = getSupabaseClient();
+      if (client) {
+        try {
+          let query = client.from('buyer_scores').select('*').eq('qualification_id', qualificationId);
+          if (ruleVersion) {
+            query = query.eq('rule_version', ruleVersion);
+          }
+          const { data, error } = await query.order('created_at', { ascending: false }).limit(1);
+          if (!error && data && data.length > 0) return data[0];
+        } catch {
+          // ignore and fallback
+        }
+      }
+      return (
+        Array.from(this.buyerScoreRecordsStore.values())
+          .filter((s) => {
+            if (s.qualification_id !== qualificationId) return false;
+            if (ruleVersion && s.rule_version !== ruleVersion) return false;
+            return true;
+          })
+          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0] || null
+      );
+    },
+
+    getBuyerScoresByLeadId: async (leadId: string) => {
+      const client = getSupabaseClient();
+      if (client) {
+        try {
+          const { data, error } = await client
+            .from('buyer_scores')
+            .select('*')
+            .eq('lead_id', leadId)
+            .order('created_at', { ascending: true });
+          if (!error && data) return data;
+        } catch {
+          // ignore and fallback
+        }
+      }
+      return Array.from(this.buyerScoreRecordsStore.values()).filter((s) => s.lead_id === leadId);
+    },
+
     getLatestBuyerScore: async (leadId: string) => {
       const client = getSupabaseClient();
       if (client) {
@@ -950,6 +1099,84 @@ class SupabaseDataService {
       const list = this.buyerScoresStore.get(leadId) || [];
       if (list.length === 0) return null;
       return list[list.length - 1];
+    },
+
+    getLatestBuyerScoreRecord: async (leadId: string) => {
+      const client = getSupabaseClient();
+      if (client) {
+        try {
+          const { data, error } = await client
+            .from('buyer_scores')
+            .select('*')
+            .eq('lead_id', leadId)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (!error && data) return data;
+        } catch {
+          // ignore and fallback
+        }
+      }
+      const list = Array.from(this.buyerScoreRecordsStore.values())
+        .filter((s) => s.lead_id === leadId)
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      return list[0] || null;
+    },
+
+    listPriorityQueue: async (filter?: { tier?: string; limit?: number }) => {
+      const scores = Array.from(this.buyerScoreRecordsStore.values());
+      const queue: PriorityQueueItem[] = [];
+
+      for (const score of scores) {
+        if (filter?.tier && score.tier !== filter.tier) continue;
+
+        const lead = await this.leads.getLead(score.lead_id);
+        const qualification = score.qualification_id
+          ? await this.qualifications.getQualification(score.qualification_id)
+          : null;
+        const profile = await this.buyerProfiles.getBuyerProfile(score.lead_id);
+
+        const now = Date.now();
+        const deadlineTime = new Date(score.sla_dispatch.sla_deadline).getTime();
+        const minutesRemaining = Math.max(0, Math.round((deadlineTime - now) / (60 * 1000)));
+
+        const preferredLocations = Array.isArray(profile?.preferred_locations)
+          ? (profile.preferred_locations as string[])
+          : [];
+
+        queue.push({
+          lead_id: score.lead_id,
+          external_lead_id: lead?.lead_id || score.lead_id,
+          buyer_name: lead?.name || 'Unknown Buyer',
+          phone: lead?.phone || '',
+          composite_score: score.composite_score,
+          tier: score.tier,
+          qualification_status: qualification?.qualification_status || 'PARTIALLY_QUALIFIED',
+          sla_deadline: score.sla_dispatch.sla_deadline,
+          sla_minutes_remaining: minutesRemaining,
+          assigned_role: score.sla_dispatch.assigned_role,
+          follow_up_urgency: score.sla_dispatch.follow_up_urgency,
+          preferred_locations: preferredLocations,
+          property_type: profile?.property_type || 'Apartment',
+          key_highlights: score.key_drivers,
+          talking_points: score.sla_dispatch.talking_points,
+          score_id: score.id,
+          created_at: score.created_at,
+        });
+      }
+
+      // Sort by priority rank (1 is highest), composite_score DESC, sla_deadline ASC
+      queue.sort((a, b) => {
+        if (b.composite_score !== a.composite_score) {
+          return b.composite_score - a.composite_score;
+        }
+        return new Date(a.sla_deadline).getTime() - new Date(b.sla_deadline).getTime();
+      });
+
+      if (filter?.limit) {
+        return queue.slice(0, filter.limit);
+      }
+      return queue;
     },
   };
 
@@ -1138,7 +1365,21 @@ class SupabaseDataService {
       const client = getSupabaseClient();
       if (client) {
         try {
-          const { data, error } = await client.from('conversation_extractions').insert(record).select().single();
+          const { data: existing } = await client
+            .from('conversation_extractions')
+            .select('id')
+            .eq('transcript_id', record.transcript_id)
+            .eq('schema_version', record.schema_version)
+            .eq('prompt_version', record.prompt_version)
+            .maybeSingle();
+
+          let query;
+          if (existing) {
+            query = client.from('conversation_extractions').update(record).eq('id', existing.id);
+          } else {
+            query = client.from('conversation_extractions').insert(record);
+          }
+          const { data, error } = await query.select().single();
           if (!error && data) {
             this.extractionsStore.set(data.id, data);
             return data;
@@ -1259,7 +1500,20 @@ class SupabaseDataService {
       const client = getSupabaseClient();
       if (client) {
         try {
-          const { data, error } = await client.from('buyer_qualifications').insert(record).select().single();
+          const { data: existing } = await client
+            .from('buyer_qualifications')
+            .select('id')
+            .eq('extraction_id', record.extraction_id)
+            .eq('rule_version', record.rule_version)
+            .maybeSingle();
+
+          let query;
+          if (existing) {
+            query = client.from('buyer_qualifications').update(record).eq('id', existing.id);
+          } else {
+            query = client.from('buyer_qualifications').insert(record);
+          }
+          const { data, error } = await query.select().single();
           if (!error && data) {
             this.qualificationsStore.set(data.id, data);
             return data;
@@ -1415,17 +1669,20 @@ class SupabaseDataService {
     }
     if (!lead) return null;
 
-    const [enrichments, profile, prefs, matches, score, events] = await Promise.all([
+    const [enrichments, profile, prefs, matches, score, events, extractionsList] = await Promise.all([
       this.leadEnrichment.getEnrichment(lead.id),
       this.buyerProfiles.getBuyerProfile(lead.id),
       this.buyerPreferences.getBuyerPreferences(lead.id),
       this.projectMatches.getProjectMatches(lead.id),
       this.buyerScores.getLatestBuyerScore(lead.id),
       this.leadEvents.getLeadEvents(lead.id),
+      this.extractions.getExtractionsByLeadId(lead.id),
     ]);
 
     const latestEnrichment = enrichments.length > 0 ? enrichments[enrichments.length - 1] : null;
     const latestEvent = events.length > 0 ? events[events.length - 1] : null;
+    const latestExtraction = extractionsList.length > 0 ? extractionsList[extractionsList.length - 1] : null;
+    const extData = latestExtraction?.extracted_data as any;
 
     // Map top matches
     const domainMatches: DomainProjectMatch[] = [];
@@ -1462,12 +1719,20 @@ class SupabaseDataService {
       });
     }
 
-    const preferredLocations = Array.isArray(profile?.preferred_locations)
-      ? (profile.preferred_locations as string[])
-      : [];
-    const requirements = Array.isArray(profile?.requirements)
-      ? (profile.requirements as string[])
-      : [];
+    const preferredLocations =
+      extData?.preferred_locations?.value && Array.isArray(extData.preferred_locations.value) && extData.preferred_locations.value.length > 0
+        ? extData.preferred_locations.value
+        : Array.isArray(profile?.preferred_locations)
+        ? (profile.preferred_locations as string[])
+        : [];
+
+    const requirements =
+      extData?.requirements && Array.isArray(extData.requirements) && extData.requirements.length > 0
+        ? extData.requirements.map((r: any) => `${r.property_type || ''} ${r.configuration || ''}`.trim())
+        : Array.isArray(profile?.requirements)
+        ? (profile.requirements as string[])
+        : [];
+
     const preferencesList = prefs.map((p) => `${p.attribute}: ${JSON.stringify(p.value)}`);
 
     const gfLead: GFBuyerLead = {
@@ -1482,19 +1747,20 @@ class SupabaseDataService {
         company: latestEnrichment?.company ?? '',
       },
       buying_intent: {
-        interested: profile?.property_interest ?? true,
-        property_type: profile?.property_type ?? 'Apartment',
-        configuration: profile?.configuration ?? '',
-        purpose: profile?.purpose ?? 'Self-use',
+        interested: extData?.interested?.value ?? profile?.property_interest ?? true,
+        property_type: extData?.primary_property_type?.value ?? profile?.property_type ?? 'Apartment',
+        configuration: extData?.primary_configuration?.value ?? profile?.configuration ?? '',
+        purpose: extData?.purpose?.value ?? profile?.purpose ?? 'Self-use',
         budget: {
-          min: profile?.budget_min ?? null,
-          max: profile?.budget_max ?? null,
-          currency: profile?.currency ?? 'INR',
+          min: extData?.budget?.min ?? profile?.budget_min ?? null,
+          max: extData?.budget?.max ?? profile?.budget_max ?? null,
+          currency: extData?.budget?.currency ?? profile?.currency ?? 'INR',
+          qualitative_budget: extData?.budget?.raw_expression ?? undefined,
         },
         preferred_locations: preferredLocations,
-        timeline: profile?.timeline ?? '',
-        financing: profile?.financing ?? '',
-        decision_maker: profile?.decision_maker ?? null,
+        timeline: extData?.timeline?.value ?? profile?.timeline ?? '',
+        financing: extData?.financing?.value ?? profile?.financing ?? '',
+        decision_maker: extData?.decision_maker?.value ?? profile?.decision_maker ?? null,
         requirements: requirements,
         preferences: preferencesList,
       },

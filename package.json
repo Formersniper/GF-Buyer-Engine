@@ -16,7 +16,9 @@
     "test:phase4b-live": "tsx tests/phase4b-live-validation.ts",
     "test:phase5a": "tsx tests/phase5a-transcript-ingestion.ts",
     "test:phase5b": "tsx tests/phase5b-gemini-extraction.ts",
-    "test:phase5c": "tsx tests/phase5c-buyer-qualification.ts"
+    "test:phase5c": "tsx tests/phase5c-buyer-qualification.ts",
+    "test:phase5d": "tsx tests/phase5d-buyer-scoring.ts",
+    "test:all": "npm run test:phase4a && npm run test:phase4b && npm run test:phase5a && npm run test:phase5b && npm run test:phase5c && npm run test:phase5d"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

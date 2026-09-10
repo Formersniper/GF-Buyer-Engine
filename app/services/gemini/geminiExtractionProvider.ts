@@ -388,6 +388,9 @@ export class MockGeminiExtractionProvider implements GeminiExtractionProvider {
       });
     }
 
+    const hasFamilyDiscuss = text.includes('family') || text.includes('discuss') || text.includes('baat karenge');
+    const isSoleDecision = text.includes('sole decision') || text.includes('i am the decision') || text.includes('main hi decide');
+
     const extractedData: ExtractedBuyerIntelligence = {
       interested: {
         value: true,
@@ -446,9 +449,9 @@ export class MockGeminiExtractionProvider implements GeminiExtractionProvider {
         source: 'CALL_TRANSCRIPT',
       },
       decision_maker: {
-        value: null,
-        truth_level: 'UNKNOWN',
-        evidence: null,
+        value: isSoleDecision ? true : null,
+        truth_level: isSoleDecision ? 'CONFIRMED' : 'UNKNOWN',
+        evidence: isSoleDecision ? 'Sole decision maker' : null,
         source: 'CALL_TRANSCRIPT',
       },
       requirements,
