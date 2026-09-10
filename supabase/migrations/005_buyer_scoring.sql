@@ -22,6 +22,9 @@ CREATE TABLE IF NOT EXISTS buyer_scores (
     CONSTRAINT uq_buyer_scores_unique UNIQUE (qualification_id, rule_version)
 );
 
+ALTER TABLE buyer_scores
+    ADD COLUMN IF NOT EXISTS qualification_id UUID;
+
 -- ==========================================
 -- INDEXES
 -- ==========================================
