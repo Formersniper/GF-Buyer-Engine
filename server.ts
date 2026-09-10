@@ -10,6 +10,8 @@ import { scoutAdapter } from './app/services/scout/scoutAdapter';
 import { conversationExtractionService } from './app/services/gemini/conversationExtractionService';
 import { buyerQualificationService } from './app/services/qualification/buyerQualificationService';
 import { buyerScoringService } from './app/services/scoring/buyerScoringService';
+import { projectMatchingService } from './app/services/matching/projectMatchingService';
+import { matchingAgent } from './app/agents/MatchingAgent';
 
 async function startServer() {
   const app = express();
@@ -306,6 +308,55 @@ async function startServer() {
       res.json(scores);
     } catch (err: unknown) {
       res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to get scores' });
+    }
+  });
+
+  // --- PROJECT MATCHING & RECOMMENDATIONS ENDPOINTS (Phase 5E) ---
+
+  // Match Buyer Requirements
+  app.post('/api/matching/match', async (req, res) => {
+    try {
+      const { leadId, qualificationId, extractionId, forceRematch, ruleVersion, catalogVersion } = req.body;
+      if (!leadId) {
+        return res.status(400).json({ error: 'leadId is required' });
+      }
+
+      const result = await projectMatchingService.matchBuyerRequirements({
+        leadId,
+        qualificationId,
+        extractionId,
+        forceRematch,
+        ruleVersion,
+        catalogVersion,
+      });
+      res.json(result);
+    } catch (err: unknown) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Project matching failed' });
+    }
+  });
+
+  // Get Matches for Lead (Phase 5E)
+  app.get('/api/matching/lead/:leadId', async (req, res) => {
+    try {
+      const recommendations = await projectMatchingService.getMatchesForLead(req.params.leadId);
+      res.json(recommendations);
+    } catch (err: unknown) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to get recommendations' });
+    }
+  });
+
+  // List Active Project Catalog (Phase 5E)
+  app.get('/api/matching/projects', async (req, res) => {
+    try {
+      const { city, status, limit } = req.query;
+      const projects = await supabaseDataService.projects.listProjects({
+        city: typeof city === 'string' ? city : undefined,
+        status: typeof status === 'string' ? status : undefined,
+        limit: limit ? Number(limit) : undefined,
+      });
+      res.json(projects);
+    } catch (err: unknown) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to get projects' });
     }
   });
 

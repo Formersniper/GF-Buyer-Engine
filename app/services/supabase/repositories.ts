@@ -37,6 +37,7 @@ import {
 import { GFBuyerLead, ProjectMatch as DomainProjectMatch } from '../../schemas/buyerLead';
 import { WorkflowStatus } from '../../schemas/workflow';
 import { getSupabaseClient } from './client';
+import { SAMPLE_PROJECT_CATALOG } from '../data/sampleProjects';
 
 // ==========================================
 // 1. REPOSITORY CONTRACTS (Section 10)
@@ -202,98 +203,7 @@ class SupabaseDataService {
   }
 
   private seedDefaultProjects(): void {
-    const sampleProjects: Array<Omit<DbProject, 'id' | 'created_at' | 'updated_at'>> = [
-      {
-        project_code: 'DEMO_PROJECT_001',
-        project_name: 'Prestige Falcon City Phase 2',
-        developer_name: 'Prestige Group',
-        city: 'Bengaluru',
-        locality: 'Kanakapura Road',
-        micro_market: 'South Bengaluru',
-        property_type: 'Apartment',
-        configurations: ['2 BHK', '3 BHK', '4 BHK'],
-        price_min: 11500000,
-        price_max: 24500000,
-        possession: 'Dec 2026',
-        project_description: 'High-rise luxury residential development located right next to the Forum Mall and metro connectivity.',
-        features: ['Metro Adjacent', 'Forum Mall Access', 'Large Open Landscaping', 'EV Charging'],
-        amenities: ['Clubhouse', 'Infinity Pool', 'Badminton Court', 'Squash Court', 'Jogging Track'],
-        project_url: 'https://example.com/projects/prestige-falcon-city',
-        status: 'ACTIVE',
-      },
-      {
-        project_code: 'DEMO_PROJECT_002',
-        project_name: 'Godrej Woodsman Serenity',
-        developer_name: 'Godrej Properties',
-        city: 'Bengaluru',
-        locality: 'Hebbal',
-        micro_market: 'North Bengaluru',
-        property_type: 'Apartment',
-        configurations: ['3 BHK', '4 BHK'],
-        price_min: 18500000,
-        price_max: 38000000,
-        possession: 'Ready to Move',
-        project_description: 'Forest-themed premium luxury apartments on Bellary Road with express airport connectivity.',
-        features: ['Airport Corridor', 'Forest Theme', 'Private Decks', 'Low Density'],
-        amenities: ['Heated Pool', 'Private Theatre', 'Spa & Sauna', 'Tennis Court', 'Concierge'],
-        project_url: 'https://example.com/projects/godrej-woodsman',
-        status: 'ACTIVE',
-      },
-      {
-        project_code: 'DEMO_PROJECT_003',
-        project_name: 'Sobha Neopolis',
-        developer_name: 'Sobha Limited',
-        city: 'Bengaluru',
-        locality: 'Panathur',
-        micro_market: 'East Bengaluru / ORR',
-        property_type: 'Apartment',
-        configurations: ['1 BHK', '2 BHK', '3 BHK', '4 BHK'],
-        price_min: 9500000,
-        price_max: 29000000,
-        possession: 'Mid 2027',
-        project_description: 'Greek architecture-inspired luxury township near Outer Ring Road tech corridor.',
-        features: ['Greek Themed', 'Near Tech Parks', 'Precast German Construction', 'Multi-tier Security'],
-        amenities: ['Grand Amphitheatre', '4 Swimming Pools', 'Co-working Lounge', 'Indoor Sports Arena'],
-        project_url: 'https://example.com/projects/sobha-neopolis',
-        status: 'ACTIVE',
-      },
-      {
-        project_code: 'DEMO_PROJECT_005',
-        project_name: 'DLF The Arbour',
-        developer_name: 'DLF Limited',
-        city: 'Gurgaon',
-        locality: 'Sector 63',
-        micro_market: 'Golf Course Extension',
-        property_type: 'Luxury High-Rise',
-        configurations: ['4 BHK'],
-        price_min: 75000000,
-        price_max: 110000000,
-        possession: 'Mar 2028',
-        project_description: 'Ultra-luxury low-density residential towers on Golf Course Extension Road.',
-        features: ['Golf Course Extension', 'Double Height Lobbies', 'Wrap-around Balconies', 'Air Purification'],
-        amenities: ['Private Dining', 'Temperature Controlled Pool', 'Cigar Lounge', 'Helipad Access'],
-        project_url: 'https://example.com/projects/dlf-arbour',
-        status: 'ACTIVE',
-      },
-      {
-        project_code: 'DEMO_PROJECT_007',
-        project_name: 'Lodha World One Reserve',
-        developer_name: 'Lodha Group',
-        city: 'Mumbai',
-        locality: 'Lower Parel',
-        micro_market: 'South Central Mumbai',
-        property_type: 'Ultra Luxury High-Rise',
-        configurations: ['3 BHK', '4 BHK', '5 BHK'],
-        price_min: 95000000,
-        price_max: 220000000,
-        possession: 'Ready to Move',
-        project_description: 'Iconic global architectural landmark with panoramic views of the Arabian Sea and city skyline.',
-        features: ['Arabian Sea Views', 'Armani/Casa Interiors', 'Private Elevators', 'Tri-level Sky Villas'],
-        amenities: ['Private Observatory', 'World-class Spa', 'Lap Pool', 'Private Butler Service'],
-        project_url: 'https://example.com/projects/lodha-world-one',
-        status: 'ACTIVE',
-      },
-    ];
+    const sampleProjects: Array<Omit<DbProject, 'id' | 'created_at' | 'updated_at'>> = SAMPLE_PROJECT_CATALOG;
 
     const now = new Date().toISOString();
     for (const p of sampleProjects) {

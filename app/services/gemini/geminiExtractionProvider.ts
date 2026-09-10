@@ -287,6 +287,14 @@ export class MockGeminiExtractionProvider implements GeminiExtractionProvider {
   private mockTimeoutNext = false;
   private customMockExtractor?: (input: ExtractionProviderInput) => ExtractedBuyerIntelligence;
 
+  constructor(customExtractorOrData?: any) {
+    if (typeof customExtractorOrData === 'function') {
+      this.customMockExtractor = customExtractorOrData;
+    } else if (customExtractorOrData && typeof customExtractorOrData === 'object') {
+      this.customMockExtractor = () => customExtractorOrData;
+    }
+  }
+
   public setMockFailure(shouldFail: boolean) {
     this.mockFailNext = shouldFail;
   }
@@ -315,7 +323,110 @@ export class MockGeminiExtractionProvider implements GeminiExtractionProvider {
     }
 
     if (this.customMockExtractor) {
-      const customData = this.customMockExtractor(input);
+      let customData: any = this.customMockExtractor(input);
+      if (customData && customData.buying_intent && !customData.primary_property_type) {
+        const bi = customData.buying_intent;
+        const normalized: ExtractedBuyerIntelligence = {
+          interested: bi.interested?.value !== undefined
+            ? {
+                value: Boolean(bi.interested.value),
+                truth_level: bi.interested.truth_level === 'EXPLICIT' ? 'CONFIRMED' : bi.interested.truth_level || 'CONFIRMED',
+                evidence: bi.interested.evidence || null,
+                source: 'CALL_TRANSCRIPT',
+              }
+            : { value: true, truth_level: 'CONFIRMED', evidence: null, source: 'CALL_TRANSCRIPT' },
+          primary_property_type: {
+            value: bi.property_type?.value || null,
+            truth_level: bi.property_type?.truth_level || 'UNKNOWN',
+            evidence: bi.property_type?.evidence || null,
+            source: 'CALL_TRANSCRIPT',
+          },
+          primary_configuration: {
+            value: bi.configuration?.value || null,
+            truth_level: bi.configuration?.truth_level || 'UNKNOWN',
+            evidence: bi.configuration?.evidence || null,
+            source: 'CALL_TRANSCRIPT',
+          },
+          purpose: {
+            value: bi.purpose?.value || 'unknown',
+            truth_level: bi.purpose?.truth_level || 'UNKNOWN',
+            evidence: bi.purpose?.evidence || null,
+            source: 'CALL_TRANSCRIPT',
+          },
+          budget: {
+            min: bi.budget?.value?.min ?? bi.budget?.min ?? null,
+            max: bi.budget?.value?.max ?? bi.budget?.max ?? null,
+            currency: bi.budget?.value?.currency || bi.budget?.currency || 'INR',
+            raw_expression: bi.budget?.raw_expression || null,
+            truth_level: bi.budget?.truth_level || 'UNKNOWN',
+            evidence: bi.budget?.evidence || null,
+          },
+          preferred_locations: {
+            value: bi.preferred_locations?.value || (Array.isArray(bi.preferred_locations) ? bi.preferred_locations : []),
+            truth_level: bi.preferred_locations?.truth_level || 'UNKNOWN',
+            evidence: bi.preferred_locations?.evidence || null,
+            source: 'CALL_TRANSCRIPT',
+          },
+          timeline: {
+            value: bi.timeline?.value || null,
+            truth_level: bi.timeline?.truth_level || 'UNKNOWN',
+            evidence: bi.timeline?.evidence || null,
+            source: 'CALL_TRANSCRIPT',
+          },
+          possession_preference: {
+            value: bi.possession_preference?.value || 'unknown',
+            truth_level: bi.possession_preference?.truth_level || 'UNKNOWN',
+            evidence: null,
+            source: 'CALL_TRANSCRIPT',
+          },
+          financing: {
+            value: bi.financing?.value || null,
+            truth_level: bi.financing?.truth_level || 'UNKNOWN',
+            evidence: null,
+            source: 'CALL_TRANSCRIPT',
+          },
+          decision_maker: {
+            value: bi.decision_maker?.value || null,
+            truth_level: bi.decision_maker?.truth_level || 'UNKNOWN',
+            evidence: null,
+            source: 'CALL_TRANSCRIPT',
+          },
+          stated_preferences: {
+            value: bi.preferences?.value || [],
+            truth_level: bi.preferences?.truth_level || 'UNKNOWN',
+            evidence: null,
+            source: 'CALL_TRANSCRIPT',
+          },
+          additional_notes: {
+            value: bi.additional_notes?.value || null,
+            truth_level: bi.additional_notes?.truth_level || 'UNKNOWN',
+            evidence: null,
+            source: 'CALL_TRANSCRIPT',
+          },
+          requirements: Array.isArray(bi.requirements_breakdown)
+            ? bi.requirements_breakdown.map((r: any) => ({
+                property_type: r.property_type || null,
+                configuration: r.configuration || null,
+                purpose: r.purpose || null,
+                land_area: r.land_area || null,
+                truth_level: r.truth_level || 'CONFIRMED',
+                evidence: r.evidence || null,
+              }))
+            : bi.property_type?.value
+            ? [
+                {
+                  property_type: bi.property_type.value,
+                  configuration: bi.configuration?.value || null,
+                  purpose: bi.purpose?.value || null,
+                  land_area: null,
+                  truth_level: bi.property_type.truth_level || 'CONFIRMED',
+                  evidence: null,
+                },
+              ]
+            : [],
+        };
+        customData = normalized;
+      }
       return {
         model: 'gemini-3.8-flash-mock',
         promptVersion: EXTRACTION_PROMPT_VERSION,

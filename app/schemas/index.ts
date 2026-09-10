@@ -5,3 +5,4 @@ export * from './buyerLead';
 export * from './extraction';
 export * from './qualification';
 export * from './scoring';
+export * from './matching';
