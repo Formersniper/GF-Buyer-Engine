@@ -8,6 +8,7 @@ import { transcriptIngestionService } from './app/services/voice/transcriptInges
 import { supabaseDataService } from './app/services/supabase/repositories';
 import { scoutAdapter } from './app/services/scout/scoutAdapter';
 import { conversationExtractionService } from './app/services/gemini/conversationExtractionService';
+import { buyerQualificationService } from './app/services/qualification/buyerQualificationService';
 
 async function startServer() {
   const app = express();
@@ -150,6 +151,75 @@ async function startServer() {
       res.json(extractions);
     } catch (err: unknown) {
       res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to get extractions' });
+    }
+  });
+
+  // Qualify Buyer (Phase 5C)
+  app.post('/api/qualification/qualify', async (req, res) => {
+    try {
+      const { extractionId, leadId, forceRequalify, ruleVersion } = req.body;
+      if (!extractionId && !leadId) {
+        return res.status(400).json({ error: 'Either extractionId or leadId is required' });
+      }
+
+      let result;
+      if (extractionId) {
+        result = await buyerQualificationService.qualifyExtraction({
+          extractionId,
+          forceRequalify,
+          ruleVersion,
+        });
+      } else {
+        result = await buyerQualificationService.qualifyLead({
+          leadId,
+          forceRequalify,
+          ruleVersion,
+        });
+      }
+
+      res.json(result);
+    } catch (err: unknown) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Buyer qualification failed' });
+    }
+  });
+
+  // Get Qualification by ID (Phase 5C)
+  app.get('/api/qualification/:id', async (req, res) => {
+    try {
+      const qualification = await supabaseDataService.qualifications.getQualification(req.params.id);
+      if (!qualification) {
+        return res.status(404).json({ error: 'Qualification record not found' });
+      }
+      res.json(qualification);
+    } catch (err: unknown) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to get qualification' });
+    }
+  });
+
+  // Get Qualification by Extraction ID (Phase 5C)
+  app.get('/api/qualification/extraction/:extractionId', async (req, res) => {
+    try {
+      const qualification = await supabaseDataService.qualifications.getQualificationByExtractionId(
+        req.params.extractionId
+      );
+      if (!qualification) {
+        return res.status(404).json({ error: 'Qualification not found for this extraction' });
+      }
+      res.json(qualification);
+    } catch (err: unknown) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to get qualification' });
+    }
+  });
+
+  // Get Qualifications by Lead ID (Phase 5C)
+  app.get('/api/qualification/lead/:leadId', async (req, res) => {
+    try {
+      const qualifications = await supabaseDataService.qualifications.getQualificationsByLeadId(
+        req.params.leadId
+      );
+      res.json(qualifications);
+    } catch (err: unknown) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to get qualifications' });
     }
   });
 

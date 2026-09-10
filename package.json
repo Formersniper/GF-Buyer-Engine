@@ -15,7 +15,8 @@
     "test:phase4b": "tsx tests/sarvam-unit-tests.ts",
     "test:phase4b-live": "tsx tests/phase4b-live-validation.ts",
     "test:phase5a": "tsx tests/phase5a-transcript-ingestion.ts",
-    "test:phase5b": "tsx tests/phase5b-gemini-extraction.ts"
+    "test:phase5b": "tsx tests/phase5b-gemini-extraction.ts",
+    "test:phase5c": "tsx tests/phase5c-buyer-qualification.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

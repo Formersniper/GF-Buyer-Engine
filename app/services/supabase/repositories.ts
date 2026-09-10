@@ -30,6 +30,7 @@ import {
   CallTranscript,
   TranscriptTurn,
   ConversationExtraction,
+  BuyerQualification,
 } from '../../schemas/database';
 import { GFBuyerLead, ProjectMatch as DomainProjectMatch } from '../../schemas/buyerLead';
 import { WorkflowStatus } from '../../schemas/workflow';
@@ -94,7 +95,22 @@ export interface LeadEventsRepository {
 }
 
 export interface CallTranscriptsRepository {
-  createTranscript(transcript: Omit<CallTranscript, 'id' | 'created_at' | 'updated_at'> & { id?: string }): Promise<CallTranscript>;
+  createTranscript(transcript: {
+    id?: string;
+    lead_id: string;
+    call_id: string;
+    provider_call_id?: string | null;
+    interaction_id?: string | null;
+    transcript_text: string;
+    transcript_turns?: TranscriptTurn[] | null;
+    language?: string | null;
+    duration_seconds?: number | null;
+    source: string;
+    source_event_type?: string | null;
+    ingestion_status?: string;
+    ingestion_version?: string;
+    captured_at?: string;
+  }): Promise<CallTranscript>;
   getTranscript(id: string): Promise<CallTranscript | null>;
   getTranscriptByCallId(callId: string): Promise<CallTranscript | null>;
   getTranscriptByProviderCallId(providerCallId: string): Promise<CallTranscript | null>;
@@ -102,11 +118,44 @@ export interface CallTranscriptsRepository {
 }
 
 export interface ConversationExtractionsRepository {
-  createExtraction(extraction: Omit<ConversationExtraction, 'id' | 'created_at' | 'updated_at'> & { id?: string }): Promise<ConversationExtraction>;
+  createExtraction(extraction: {
+    id?: string;
+    lead_id: string;
+    call_id: string;
+    transcript_id: string;
+    provider_call_id?: string | null;
+    interaction_id?: string | null;
+    model: string;
+    prompt_version?: string;
+    schema_version?: string;
+    extraction_status?: string;
+    extracted_data?: ConversationExtraction['extracted_data'];
+    raw_gemini_response?: Record<string, unknown> | null;
+    error_message?: string | null;
+  }): Promise<ConversationExtraction>;
   getExtraction(id: string): Promise<ConversationExtraction | null>;
   getExtractionByTranscriptId(transcriptId: string, schemaVersion?: string, promptVersion?: string): Promise<ConversationExtraction | null>;
   getExtractionByCallId(callId: string): Promise<ConversationExtraction | null>;
   getExtractionsByLeadId(leadId: string): Promise<ConversationExtraction[]>;
+}
+
+export interface BuyerQualificationsRepository {
+  createQualification(qualification: {
+    id?: string;
+    lead_id: string;
+    extraction_id: string;
+    qualification_status: BuyerQualification['qualification_status'];
+    reason_codes?: BuyerQualification['reason_codes'];
+    blocking_fields?: string[];
+    follow_up_fields?: string[];
+    dimension_assessments?: BuyerQualification['dimension_assessments'];
+    evidence_refs?: BuyerQualification['evidence_refs'];
+    qualification_version?: string;
+    rule_version?: string;
+  }): Promise<BuyerQualification>;
+  getQualification(id: string): Promise<BuyerQualification | null>;
+  getQualificationByExtractionId(extractionId: string, ruleVersion?: string): Promise<BuyerQualification | null>;
+  getQualificationsByLeadId(leadId: string): Promise<BuyerQualification[]>;
 }
 
 // ==========================================
@@ -119,6 +168,7 @@ class SupabaseDataService {
   private callsStore: Map<string, Call> = new Map();
   private transcriptsStore: Map<string, CallTranscript> = new Map();
   private extractionsStore: Map<string, ConversationExtraction> = new Map();
+  private qualificationsStore: Map<string, BuyerQualification> = new Map();
   private buyerProfilesStore: Map<string, BuyerProfile> = new Map();
   private buyerPreferencesStore: Map<string, BuyerPreference[]> = new Map();
   private projectsStore: Map<string, DbProject> = new Map();
@@ -1077,7 +1127,7 @@ class SupabaseDataService {
         model: extraction.model,
         prompt_version: extraction.prompt_version ?? '1.0',
         schema_version: extraction.schema_version ?? '1.0',
-        extraction_status: extraction.extraction_status ?? 'EXTRACTED',
+        extraction_status: (extraction.extraction_status as ConversationExtraction['extraction_status']) ?? 'EXTRACTED',
         extracted_data: extraction.extracted_data ?? null,
         raw_gemini_response: extraction.raw_gemini_response ?? null,
         error_message: extraction.error_message ?? null,
@@ -1184,6 +1234,101 @@ class SupabaseDataService {
         }
       }
       return Array.from(this.extractionsStore.values()).filter((e) => e.lead_id === leadId);
+    },
+  };
+
+  public qualifications: BuyerQualificationsRepository = {
+    createQualification: async (qualification) => {
+      const now = new Date().toISOString();
+      const record: BuyerQualification = {
+        id: qualification.id || this.generateUUID(),
+        lead_id: qualification.lead_id,
+        extraction_id: qualification.extraction_id,
+        qualification_status: qualification.qualification_status,
+        reason_codes: qualification.reason_codes ?? [],
+        blocking_fields: qualification.blocking_fields ?? [],
+        follow_up_fields: qualification.follow_up_fields ?? [],
+        dimension_assessments: qualification.dimension_assessments ?? {},
+        evidence_refs: qualification.evidence_refs ?? [],
+        qualification_version: qualification.qualification_version ?? '1.0',
+        rule_version: qualification.rule_version ?? '1.0',
+        created_at: now,
+        updated_at: now,
+      };
+
+      const client = getSupabaseClient();
+      if (client) {
+        try {
+          const { data, error } = await client.from('buyer_qualifications').insert(record).select().single();
+          if (!error && data) {
+            this.qualificationsStore.set(data.id, data);
+            return data;
+          }
+          if (error) {
+            console.warn('[Supabase Insert Error] buyer_qualifications fallback to in-memory:', error.message);
+          }
+        } catch (err) {
+          console.warn('[Supabase Insert Exception] buyer_qualifications fallback:', err);
+        }
+      }
+
+      this.qualificationsStore.set(record.id, record);
+      return record;
+    },
+
+    getQualification: async (id: string) => {
+      const client = getSupabaseClient();
+      if (client) {
+        try {
+          const { data, error } = await client.from('buyer_qualifications').select('*').eq('id', id).maybeSingle();
+          if (!error && data) return data;
+        } catch {
+          // ignore and fallback
+        }
+      }
+      return this.qualificationsStore.get(id) || null;
+    },
+
+    getQualificationByExtractionId: async (extractionId: string, ruleVersion?: string) => {
+      const client = getSupabaseClient();
+      if (client) {
+        try {
+          let query = client.from('buyer_qualifications').select('*').eq('extraction_id', extractionId);
+          if (ruleVersion) {
+            query = query.eq('rule_version', ruleVersion);
+          }
+          const { data, error } = await query.order('created_at', { ascending: false }).limit(1);
+          if (!error && data && data.length > 0) return data[0];
+        } catch {
+          // ignore and fallback
+        }
+      }
+      return (
+        Array.from(this.qualificationsStore.values())
+          .filter((q) => {
+            if (q.extraction_id !== extractionId) return false;
+            if (ruleVersion && q.rule_version !== ruleVersion) return false;
+            return true;
+          })
+          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0] || null
+      );
+    },
+
+    getQualificationsByLeadId: async (leadId: string) => {
+      const client = getSupabaseClient();
+      if (client) {
+        try {
+          const { data, error } = await client
+            .from('buyer_qualifications')
+            .select('*')
+            .eq('lead_id', leadId)
+            .order('created_at', { ascending: true });
+          if (!error && data) return data;
+        } catch {
+          // ignore and fallback
+        }
+      }
+      return Array.from(this.qualificationsStore.values()).filter((q) => q.lead_id === leadId);
     },
   };
 

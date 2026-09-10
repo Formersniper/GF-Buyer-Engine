@@ -177,4 +177,5 @@ export interface CallTranscript {
 export type DbCallTranscript = CallTranscript;
 
 export * from '../../app/schemas/extraction';
+export * from '../../app/schemas/qualification';
 
