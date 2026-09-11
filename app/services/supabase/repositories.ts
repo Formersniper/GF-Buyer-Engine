@@ -1,7 +1,7 @@
 /**
  * GrowthForge Buyer Intelligence Engine - Authoritative Supabase Repositories
  *
- * SUPABASE AS SYSTEM OF RECORD:
+ * SUPABASE AS SYSTEM OF RECORD & TENANT-AWARE APPLICATION DATA ACCESS LAYER:
  * Provides typed repository interfaces and implementations for:
  * 1. leads
  * 2. lead_enrichment
@@ -12,6 +12,14 @@
  * 7. project_matches
  * 8. buyer_scores
  * 9. lead_events
+ * 10. call_transcripts
+ * 11. conversation_extractions
+ * 12. buyer_qualifications
+ * 13. broker_handoffs
+ * 14. tenants
+ * 15. tenant_memberships
+ * 16. tenant_api_keys
+ * 17. webhook_events
  *
  * Canonical Domain Mapping:
  * Includes mapToGFBuyerLead() to aggregate normalized records into the frozen GFBuyerLead domain contract.
@@ -42,153 +50,103 @@ import {
 } from '../../schemas/database';
 import { GFBuyerLead, ProjectMatch as DomainProjectMatch } from '../../schemas/buyerLead';
 import { WorkflowStatus } from '../../schemas/workflow';
+import {
+  Tenant,
+  TenantMembership,
+  TenantApiKey,
+  WebhookEvent,
+  TenantScope,
+  TenantContext,
+  ResolvedTenantScope,
+  resolveEffectiveTenantScope,
+  TenantRequiredError,
+  TenantMismatchError,
+  TenantForbiddenError,
+  DEFAULT_TENANT_ID,
+  DEFAULT_TENANT,
+} from '../../schemas/tenant';
 import { getSupabaseClient } from './client';
 import { SAMPLE_PROJECT_CATALOG } from '../data/sampleProjects';
 
-// ==========================================
-// 1. REPOSITORY CONTRACTS (Section 10)
-// ==========================================
+import {
+  LeadsRepository,
+  LeadEnrichmentRepository,
+  LeadEventsRepository,
+  createLeadsRepository,
+  createLeadEnrichmentRepository,
+  createLeadEventsRepository,
+} from './repos/leadsRepo';
+import {
+  CallsRepository,
+  createCallsRepository,
+} from './repos/callsRepo';
+import {
+  BuyerProfilesRepository,
+  BuyerPreferencesRepository,
+  createBuyerProfilesRepository,
+  createBuyerPreferencesRepository,
+} from './repos/profilesRepo';
+import {
+  ProjectsRepository,
+  ProjectMatchesRepository,
+  createProjectsRepository,
+  createProjectMatchesRepository,
+} from './repos/projectsRepo';
+import {
+  CallTranscriptsRepository,
+  ConversationExtractionsRepository,
+  BuyerQualificationsRepository,
+  createCallTranscriptsRepository,
+  createConversationExtractionsRepository,
+  createBuyerQualificationsRepository,
+} from './repos/voiceRepo';
+import {
+  BuyerScoresRepository,
+  createBuyerScoresRepository,
+} from './repos/scoresRepo';
+import {
+  BrokerHandoffRepository,
+  createBrokerHandoffRepository,
+} from './repos/handoffsRepo';
+import {
+  TenantsRepository,
+  TenantMembershipsRepository,
+  TenantApiKeysRepository,
+  WebhookEventsRepository,
+  createTenantsRepository,
+  createTenantMembershipsRepository,
+  createTenantApiKeysRepository,
+  createWebhookEventsRepository,
+} from './repos/tenantsRepo';
+import { generateUUID, parseScopeAndId } from './repos/helpers';
 
-export interface LeadsRepository {
-  createLead(lead: Partial<Omit<Lead, 'id' | 'created_at' | 'updated_at'>> & { lead_id: string; phone: string; name?: string } & { id?: string }): Promise<Lead>;
-  getLead(id: string): Promise<Lead | null>;
-  getLeadByLeadId(leadId: string): Promise<Lead | null>;
-  updateLead(id: string, updates: Partial<Omit<Lead, 'id' | 'lead_id' | 'created_at'>>): Promise<Lead>;
-  listLeads(filter?: { status?: string; limit?: number; offset?: number }): Promise<Lead[]>;
-  deleteLead(id: string): Promise<boolean>;
-}
-
-export interface LeadEnrichmentRepository {
-  createEnrichment(enrichment: Omit<LeadEnrichment, 'id' | 'created_at'> & { id?: string }): Promise<LeadEnrichment>;
-  getEnrichment(leadId: string): Promise<LeadEnrichment[]>;
-}
-
-export interface CallsRepository {
-  createCall(call: Partial<Omit<Call, 'id' | 'created_at'>> & { lead_id: string } & { id?: string }): Promise<Call>;
-  getCall(id: string): Promise<Call | null>;
-  getCallByProviderCallId(providerCallId: string): Promise<Call | null>;
-  getCallsByLead(leadId: string): Promise<Call[]>;
-  updateCall(id: string, updates: Partial<Omit<Call, 'id' | 'lead_id' | 'created_at'>>): Promise<Call>;
-}
-
-export interface BuyerProfilesRepository {
-  upsertBuyerProfile(profile: Partial<Omit<BuyerProfile, 'id' | 'created_at' | 'updated_at'>> & { lead_id: string; id?: string }): Promise<BuyerProfile>;
-  getBuyerProfile(leadId: string): Promise<BuyerProfile | null>;
-}
-
-export interface BuyerPreferencesRepository {
-  addBuyerPreference(preference: Omit<BuyerPreference, 'id' | 'created_at'> & { id?: string }): Promise<BuyerPreference>;
-  getBuyerPreferences(leadId: string): Promise<BuyerPreference[]>;
-}
-
-export interface ProjectsRepository {
-  createProject(project: Omit<DbProject, 'id' | 'created_at' | 'updated_at'> & { id?: string }): Promise<DbProject>;
-  getProject(id: string): Promise<DbProject | null>;
-  getProjectByCode(projectCode: string): Promise<DbProject | null>;
-  listProjects(filter?: { city?: string; status?: string; limit?: number }): Promise<DbProject[]>;
-}
-
-export interface ProjectMatchesRepository {
-  upsertProjectMatch(match: Omit<DbProjectMatch, 'id' | 'created_at'> & { id?: string }): Promise<DbProjectMatch>;
-  getProjectMatches(leadId: string): Promise<DbProjectMatch[]>;
-}
-
-export interface BuyerScoresRepository {
-  createBuyerScore(score: Omit<BuyerScore, 'id' | 'created_at'> & { id?: string }): Promise<BuyerScore>;
-  createBuyerScoreRecord(score: Omit<BuyerScoreRecord, 'id' | 'created_at' | 'updated_at'> & { id?: string }): Promise<BuyerScoreRecord>;
-  getBuyerScore(id: string): Promise<BuyerScoreRecord | null>;
-  getBuyerScoreByQualificationId(qualificationId: string, ruleVersion?: string): Promise<BuyerScoreRecord | null>;
-  getBuyerScoresByLeadId(leadId: string): Promise<BuyerScoreRecord[]>;
-  getLatestBuyerScore(leadId: string): Promise<BuyerScore | null>;
-  getLatestBuyerScoreRecord(leadId: string): Promise<BuyerScoreRecord | null>;
-  listPriorityQueue(filter?: { tier?: string; limit?: number }): Promise<PriorityQueueItem[]>;
-}
-
-export interface LeadEventsRepository {
-  appendLeadEvent(event: Omit<LeadEvent, 'id' | 'created_at'> & { id?: string }): Promise<LeadEvent>;
-  getLeadEvents(leadId: string): Promise<LeadEvent[]>;
-}
-
-export interface CallTranscriptsRepository {
-  createTranscript(transcript: {
-    id?: string;
-    lead_id: string;
-    call_id: string;
-    provider_call_id?: string | null;
-    interaction_id?: string | null;
-    transcript_text: string;
-    transcript_turns?: TranscriptTurn[] | null;
-    language?: string | null;
-    duration_seconds?: number | null;
-    source: string;
-    source_event_type?: string | null;
-    ingestion_status?: string;
-    ingestion_version?: string;
-    captured_at?: string;
-  }): Promise<CallTranscript>;
-  getTranscript(id: string): Promise<CallTranscript | null>;
-  getTranscriptByCallId(callId: string): Promise<CallTranscript | null>;
-  getTranscriptByProviderCallId(providerCallId: string): Promise<CallTranscript | null>;
-  getTranscriptsByLeadId(leadId: string): Promise<CallTranscript[]>;
-}
-
-export interface ConversationExtractionsRepository {
-  createExtraction(extraction: {
-    id?: string;
-    lead_id: string;
-    call_id: string;
-    transcript_id: string;
-    provider_call_id?: string | null;
-    interaction_id?: string | null;
-    model: string;
-    prompt_version?: string;
-    schema_version?: string;
-    extraction_status?: string;
-    extracted_data?: ConversationExtraction['extracted_data'];
-    raw_gemini_response?: Record<string, unknown> | null;
-    error_message?: string | null;
-  }): Promise<ConversationExtraction>;
-  getExtraction(id: string): Promise<ConversationExtraction | null>;
-  getExtractionByTranscriptId(transcriptId: string, schemaVersion?: string, promptVersion?: string): Promise<ConversationExtraction | null>;
-  getExtractionByCallId(callId: string): Promise<ConversationExtraction | null>;
-  getExtractionsByLeadId(leadId: string): Promise<ConversationExtraction[]>;
-}
-
-export interface BuyerQualificationsRepository {
-  createQualification(qualification: {
-    id?: string;
-    lead_id: string;
-    extraction_id: string;
-    qualification_status: BuyerQualification['qualification_status'];
-    reason_codes?: BuyerQualification['reason_codes'];
-    blocking_fields?: string[];
-    follow_up_fields?: string[];
-    dimension_assessments?: BuyerQualification['dimension_assessments'];
-    evidence_refs?: BuyerQualification['evidence_refs'];
-    qualification_version?: string;
-    rule_version?: string;
-  }): Promise<BuyerQualification>;
-  getQualification(id: string): Promise<BuyerQualification | null>;
-  getQualificationByExtractionId(extractionId: string, ruleVersion?: string): Promise<BuyerQualification | null>;
-  getQualificationsByLeadId(leadId: string): Promise<BuyerQualification[]>;
-}
-
-export interface BrokerHandoffRepository {
-  createHandoff(handoff: Omit<DbBrokerHandoff, 'id' | 'created_at' | 'updated_at'> & { id?: string }): Promise<DbBrokerHandoff>;
-  getHandoff(id: string): Promise<DbBrokerHandoff | null>;
-  getHandoffsByLeadId(leadId: string): Promise<DbBrokerHandoff[]>;
-  getHandoffByScoreId(scoreId: string, ruleVersion?: string): Promise<DbBrokerHandoff | null>;
-  getLatestHandoff(leadId: string): Promise<DbBrokerHandoff | null>;
-  updateStatus(id: string, handoffStatus: BrokerHandoffReadiness, routingStatus?: BrokerRoutingStatus): Promise<DbBrokerHandoff>;
-  updateDispatchStatus(id: string, dispatchStatus: BrokerDispatchStatus, dispatchId?: string, channel?: string): Promise<DbBrokerHandoff>;
-  listHandoffQueue(filter?: { tier?: string; status?: string; limit?: number }): Promise<HandoffQueueItem[]>;
-}
+// Re-export repository contracts and types
+export type {
+  LeadsRepository,
+  LeadEnrichmentRepository,
+  LeadEventsRepository,
+  CallsRepository,
+  BuyerProfilesRepository,
+  BuyerPreferencesRepository,
+  ProjectsRepository,
+  ProjectMatchesRepository,
+  CallTranscriptsRepository,
+  ConversationExtractionsRepository,
+  BuyerQualificationsRepository,
+  BuyerScoresRepository,
+  BrokerHandoffRepository,
+  TenantsRepository,
+  TenantMembershipsRepository,
+  TenantApiKeysRepository,
+  WebhookEventsRepository,
+};
 
 // ==========================================
-// 2. IN-MEMORY & CLIENT BACKED STORE
+// CENTRAL SUPABASE DATA SERVICE
 // ==========================================
 
-class SupabaseDataService {
+export class SupabaseDataService {
+  // In-memory data stores (fallback & local dev)
   private leadsStore: Map<string, Lead> = new Map();
   private enrichmentStore: Map<string, LeadEnrichment[]> = new Map();
   private callsStore: Map<string, Call> = new Map();
@@ -203,31 +161,74 @@ class SupabaseDataService {
   private buyerScoreRecordsStore: Map<string, BuyerScoreRecord> = new Map();
   private brokerHandoffsStore: Map<string, DbBrokerHandoff> = new Map();
   private leadEventsStore: Map<string, LeadEvent[]> = new Map();
+  private tenantsStore: Map<string, Tenant> = new Map();
+  private membershipsStore: Map<string, TenantMembership> = new Map();
+  private apiKeysStore: Map<string, TenantApiKey> = new Map();
+  private webhookEventsStore: Map<string, WebhookEvent> = new Map();
 
+  // Public typed repositories
+  public readonly leads: LeadsRepository;
+  public readonly leadEnrichment: LeadEnrichmentRepository;
+  public readonly calls: CallsRepository;
+  public readonly buyerProfiles: BuyerProfilesRepository;
+  public readonly buyerPreferences: BuyerPreferencesRepository;
+  public readonly projects: ProjectsRepository;
+  public readonly projectMatches: ProjectMatchesRepository;
+  public readonly buyerScores: BuyerScoresRepository;
+  public readonly leadEvents: LeadEventsRepository;
+  public readonly transcripts: CallTranscriptsRepository;
+  public readonly extractions: ConversationExtractionsRepository;
+  public readonly qualifications: BuyerQualificationsRepository;
+  public readonly brokerHandoffs: BrokerHandoffRepository;
+  public readonly tenants: TenantsRepository;
+  public readonly tenantMemberships: TenantMembershipsRepository;
+  public readonly tenantApiKeys: TenantApiKeysRepository;
+  public readonly webhookEvents: WebhookEventsRepository;
 
   constructor() {
-    this.seedDefaultProjects();
+    this.seedDefaultData();
+
+    this.leads = createLeadsRepository(this.leadsStore);
+    this.leadEnrichment = createLeadEnrichmentRepository(this.enrichmentStore, this.leads);
+    this.calls = createCallsRepository(this.callsStore, this.leads);
+    this.transcripts = createCallTranscriptsRepository(this.transcriptsStore, this.leads, this.calls);
+    this.extractions = createConversationExtractionsRepository(this.extractionsStore, this.leads, this.transcripts);
+    this.qualifications = createBuyerQualificationsRepository(this.qualificationsStore, this.leads, this.extractions);
+    this.buyerProfiles = createBuyerProfilesRepository(this.buyerProfilesStore, this.leads);
+    this.buyerPreferences = createBuyerPreferencesRepository(this.buyerPreferencesStore, this.leads);
+    this.projects = createProjectsRepository(this.projectsStore);
+    this.projectMatches = createProjectMatchesRepository(this.projectMatchesStore, this.leads);
+    this.buyerScores = createBuyerScoresRepository(
+      this.buyerScoresStore,
+      this.buyerScoreRecordsStore,
+      this.leads,
+      this.qualifications,
+      this.buyerProfiles
+    );
+    this.brokerHandoffs = createBrokerHandoffRepository(this.brokerHandoffsStore, this.leads);
+    this.leadEvents = createLeadEventsRepository(this.leadEventsStore, this.leads);
+    this.tenants = createTenantsRepository(this.tenantsStore);
+    this.tenantMemberships = createTenantMembershipsRepository(this.membershipsStore);
+    this.tenantApiKeys = createTenantApiKeysRepository(this.apiKeysStore);
+    this.webhookEvents = createWebhookEventsRepository(this.webhookEventsStore);
   }
 
-  private generateUUID(): string {
-    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-      return crypto.randomUUID();
-    }
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-      const r = (Math.random() * 16) | 0;
-      const v = c === 'x' ? r : (r & 0x3) | 0x8;
-      return v.toString(16);
+  private seedDefaultData(): void {
+    // Seed default tenant
+    this.tenantsStore.set(DEFAULT_TENANT_ID, {
+      ...DEFAULT_TENANT,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
     });
-  }
 
-  private seedDefaultProjects(): void {
+    // Seed default projects with default tenant
     const sampleProjects: Array<Omit<DbProject, 'id' | 'created_at' | 'updated_at'>> = SAMPLE_PROJECT_CATALOG;
-
     const now = new Date().toISOString();
     for (const p of sampleProjects) {
-      const id = this.generateUUID();
+      const id = generateUUID();
       this.projectsStore.set(id, {
         id,
+        tenant_id: DEFAULT_TENANT_ID,
         ...p,
         created_at: now,
         updated_at: now,
@@ -235,1631 +236,11 @@ class SupabaseDataService {
     }
   }
 
-  // --- Leads ---
-  public readonly leads: LeadsRepository = {
-    createLead: async (input) => {
-      const client = getSupabaseClient();
-      const now = new Date().toISOString();
-      const id = input.id || this.generateUUID();
-      const record: Lead = {
-        id,
-        lead_id: input.lead_id,
-        name: input.name ?? null,
-        phone: input.phone ?? null,
-        email: input.email ?? null,
-        source: input.source ?? 'MANUAL_IMPORT',
-        source_reference: input.source_reference ?? null,
-        status: input.status ?? 'RAW',
-        created_at: now,
-        updated_at: now,
-      };
-
-      if (client) {
-        const { data, error } = await client.from('leads').insert(record).select().single();
-        if (error) {
-          if (error.code === '23505') {
-            console.warn(`[Supabase Persistence Warning] Duplicate key conflict (code 23505) on lead_id "${input.lead_id}". Resolving lead record.`);
-            const { data: existingData, error: fetchErr } = await client
-              .from('leads')
-              .select('*')
-              .eq('lead_id', input.lead_id)
-              .maybeSingle();
-
-            if (!fetchErr && existingData) {
-              const samePhone = Boolean(input.phone && existingData.phone && input.phone.replace(/\D/g, '') === existingData.phone.replace(/\D/g, ''));
-              const sameEmail = Boolean(input.email && existingData.email && input.email.toLowerCase().trim() === existingData.email.toLowerCase().trim());
-
-              if (samePhone || sameEmail || (!input.phone && !input.email)) {
-                // Same identity duplicate: safely update non-null fields
-                const { data: updatedData } = await client
-                  .from('leads')
-                  .update({
-                    name: input.name ?? existingData.name,
-                    phone: input.phone ?? existingData.phone,
-                    email: input.email ?? existingData.email,
-                    source_reference: input.source_reference ?? existingData.source_reference,
-                    status: input.status ?? existingData.status,
-                    updated_at: now,
-                  })
-                  .eq('id', existingData.id)
-                  .select()
-                  .single();
-
-                const resolved = updatedData || existingData;
-                this.leadsStore.set(resolved.id, resolved);
-                return resolved;
-              } else {
-                // Sequence collision on distinct identity: insert with fresh unique lead_id
-                const freshLeadId = `${input.lead_id}-${Math.floor(1000 + Math.random() * 9000)}`;
-                const newRecord = { ...record, lead_id: freshLeadId };
-                const { data: freshData, error: freshErr } = await client
-                  .from('leads')
-                  .insert(newRecord)
-                  .select()
-                  .single();
-
-                if (!freshErr && freshData) {
-                  this.leadsStore.set(freshData.id, freshData);
-                  return freshData;
-                }
-              }
-            }
-          }
-          console.error('[Supabase Persistence Error] Failed to insert lead:', error);
-          throw new Error(`Supabase insert failed on public.leads: ${error.message} (code: ${error.code || 'UNKNOWN'})`);
-        }
-        if (!data) {
-          throw new Error('Supabase insert failed on public.leads: No row returned after insert.');
-        }
-        this.leadsStore.set(data.id, data);
-        return data;
-      }
-
-      this.leadsStore.set(record.id, record);
-      return record;
-    },
-
-    getLead: async (id: string) => {
-      const client = getSupabaseClient();
-      if (client) {
-        const { data, error } = await client.from('leads').select('*').eq('id', id).maybeSingle();
-        if (error) {
-          console.error('[Supabase Query Error] Failed to get lead by id:', error);
-          throw new Error(`Supabase query failed on public.leads: ${error.message}`);
-        }
-        if (data) {
-          this.leadsStore.set(data.id, data);
-          return data;
-        }
-        return null;
-      }
-      return this.leadsStore.get(id) || null;
-    },
-
-    getLeadByLeadId: async (leadId: string) => {
-      const client = getSupabaseClient();
-      if (client) {
-        const { data, error } = await client.from('leads').select('*').eq('lead_id', leadId).maybeSingle();
-        if (error) {
-          console.error('[Supabase Query Error] Failed to get lead by lead_id:', error);
-          throw new Error(`Supabase query failed on public.leads: ${error.message}`);
-        }
-        if (data) {
-          this.leadsStore.set(data.id, data);
-          return data;
-        }
-        return null;
-      }
-      for (const lead of this.leadsStore.values()) {
-        if (lead.lead_id === leadId) return lead;
-      }
-      return null;
-    },
-
-    updateLead: async (id: string, updates) => {
-      const client = getSupabaseClient();
-      const now = new Date().toISOString();
-
-      if (client) {
-        const { data, error } = await client
-          .from('leads')
-          .update({ ...updates, updated_at: now })
-          .eq('id', id)
-          .select()
-          .single();
-        if (error) {
-          console.error('[Supabase Update Error] Failed to update lead:', error);
-          throw new Error(`Supabase update failed on public.leads: ${error.message}`);
-        }
-        if (data) {
-          this.leadsStore.set(data.id, data);
-          return data;
-        }
-      }
-
-      const existing = this.leadsStore.get(id);
-      if (!existing) {
-        throw new Error(`Lead with ID ${id} not found.`);
-      }
-      const updated: Lead = {
-        ...existing,
-        ...updates,
-        updated_at: now,
-      };
-      this.leadsStore.set(id, updated);
-      return updated;
-    },
-
-    listLeads: async (filter) => {
-      const client = getSupabaseClient();
-      if (client) {
-        let query = client.from('leads').select('*').order('created_at', { ascending: false });
-        if (filter?.status) {
-          query = query.eq('status', filter.status);
-        }
-        if (filter?.limit) {
-          query = query.limit(filter.limit);
-        }
-        const { data, error } = await query;
-        if (error) {
-          console.error('[Supabase Query Error] Failed to list leads:', error);
-          throw new Error(`Supabase list query failed on public.leads: ${error.message}`);
-        }
-        if (data) {
-          for (const item of data) {
-            this.leadsStore.set(item.id, item);
-          }
-          return data;
-        }
-      }
-
-      let all = Array.from(this.leadsStore.values()).sort(
-        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      );
-      if (filter?.status) {
-        all = all.filter((l) => l.status === filter.status);
-      }
-      if (filter?.limit) {
-        all = all.slice(filter.offset || 0, (filter.offset || 0) + filter.limit);
-      }
-      return all;
-    },
-
-    deleteLead: async (id: string) => {
-      const client = getSupabaseClient();
-      if (client) {
-        const { error } = await client.from('leads').delete().eq('id', id);
-        if (error) {
-          console.error('[Supabase Delete Error] Failed to delete lead:', error);
-          throw new Error(`Supabase delete failed on public.leads: ${error.message}`);
-        }
-      }
-      return this.leadsStore.delete(id);
-    },
-  };
-
-  // --- Lead Enrichment ---
-  public readonly leadEnrichment: LeadEnrichmentRepository = {
-    createEnrichment: async (input) => {
-      const client = getSupabaseClient();
-      const now = new Date().toISOString();
-      const id = input.id || this.generateUUID();
-      const record: LeadEnrichment = {
-        id,
-        lead_id: input.lead_id,
-        platform: input.platform ?? null,
-        username: input.username ?? null,
-        profile_url: input.profile_url ?? null,
-        full_name: input.full_name ?? null,
-        bio: input.bio ?? null,
-        website: input.website ?? null,
-        company: input.company ?? null,
-        location: input.location ?? null,
-        raw_data: input.raw_data ?? null,
-        enriched_data: input.enriched_data ?? null,
-        source_confidence: input.source_confidence ?? 0.5,
-        created_at: now,
-      };
-
-      if (client) {
-        const { data, error } = await client.from('lead_enrichment').insert(record).select().single();
-        if (error) {
-          console.error('[Supabase Insert Error] lead_enrichment:', error);
-          throw new Error(`Supabase insert failed on lead_enrichment: ${error.message}`);
-        }
-        if (data) return data;
-      }
-
-      const list = this.enrichmentStore.get(record.lead_id) || [];
-      list.push(record);
-      this.enrichmentStore.set(record.lead_id, list);
-      return record;
-    },
-
-    getEnrichment: async (leadId: string) => {
-      const client = getSupabaseClient();
-      if (client) {
-        const { data, error } = await client.from('lead_enrichment').select('*').eq('lead_id', leadId);
-        if (error) {
-          console.error('[Supabase Query Error] lead_enrichment:', error);
-          throw new Error(`Supabase query failed on lead_enrichment: ${error.message}`);
-        }
-        if (data) return data;
-      }
-      return this.enrichmentStore.get(leadId) || [];
-    },
-  };
-
-  // --- Calls ---
-  public readonly calls: CallsRepository = {
-    createCall: async (input) => {
-      const client = getSupabaseClient();
-      const now = new Date().toISOString();
-      const id = input.id || this.generateUUID();
-      const record: Call = {
-        id,
-        lead_id: input.lead_id,
-        provider: input.provider ?? 'generic',
-        provider_call_id: input.provider_call_id ?? null,
-        status: input.status ?? 'INITIATED',
-        attempt_number: input.attempt_number ?? 1,
-        started_at: input.started_at !== undefined ? input.started_at : now,
-        ended_at: input.ended_at !== undefined ? input.ended_at : null,
-        duration_seconds: input.duration_seconds ?? 0,
-        transcript: input.transcript ?? null,
-        recording_url: input.recording_url ?? null,
-        call_outcome: input.call_outcome ?? null,
-        call_metadata: input.call_metadata ?? null,
-        created_at: now,
-      };
-
-      if (client) {
-        const { data, error } = await client.from('calls').insert(record).select().single();
-        if (error) {
-          console.error('[Supabase Insert Error] calls:', error);
-          throw new Error(`Supabase insert failed on calls: ${error.message}`);
-        }
-        if (data) {
-          this.callsStore.set(data.id, data);
-          return data;
-        }
-      }
-
-      this.callsStore.set(record.id, record);
-      return record;
-    },
-
-    getCall: async (idOrProviderCallId: string) => {
-      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrProviderCallId);
-      const client = getSupabaseClient();
-      if (client) {
-        if (isUUID) {
-          const { data, error } = await client.from('calls').select('*').eq('id', idOrProviderCallId).maybeSingle();
-          if (error) {
-            console.error('[Supabase Query Error] calls:', error);
-            throw new Error(`Supabase query failed on calls: ${error.message}`);
-          }
-          if (data) return data;
-        } else {
-          const { data, error } = await client.from('calls').select('*').eq('provider_call_id', idOrProviderCallId).maybeSingle();
-          if (error) {
-            console.error('[Supabase Query Error] calls:', error);
-            throw new Error(`Supabase query failed on calls: ${error.message}`);
-          }
-          if (data) return data;
-        }
-      }
-      return (
-        this.callsStore.get(idOrProviderCallId) ||
-        Array.from(this.callsStore.values()).find((c) => c.provider_call_id === idOrProviderCallId) ||
-        null
-      );
-    },
-
-    getCallByProviderCallId: async (providerCallId: string) => {
-      const client = getSupabaseClient();
-      if (client) {
-        const { data, error } = await client
-          .from('calls')
-          .select('*')
-          .eq('provider_call_id', providerCallId)
-          .order('created_at', { ascending: false })
-          .limit(1);
-        if (error) {
-          console.error('[Supabase Query Error] calls:', error);
-          throw new Error(`Supabase query failed on calls: ${error.message}`);
-        }
-        if (data && data.length > 0) return data[0];
-      }
-      return Array.from(this.callsStore.values()).find((c) => c.provider_call_id === providerCallId) || null;
-    },
-
-    getCallsByLead: async (leadId: string) => {
-      const client = getSupabaseClient();
-      if (client) {
-        const { data, error } = await client.from('calls').select('*').eq('lead_id', leadId);
-        if (error) {
-          console.error('[Supabase Query Error] calls:', error);
-          throw new Error(`Supabase query failed on calls: ${error.message}`);
-        }
-        if (data) return data;
-      }
-      return Array.from(this.callsStore.values()).filter((c) => c.lead_id === leadId);
-    },
-
-    updateCall: async (id: string, updates) => {
-      const client = getSupabaseClient();
-      if (client) {
-        const { data, error } = await client.from('calls').update(updates).eq('id', id).select().single();
-        if (error) {
-          console.error('[Supabase Update Error] calls:', error);
-          throw new Error(`Supabase update failed on calls: ${error.message}`);
-        }
-        if (data) {
-          this.callsStore.set(data.id, data);
-          return data;
-        }
-      }
-
-      const existing = this.callsStore.get(id);
-      if (!existing) {
-        throw new Error(`Call with ID ${id} not found.`);
-      }
-      const updated: Call = { ...existing, ...updates };
-      this.callsStore.set(id, updated);
-      return updated;
-    },
-  };
-
-  // --- Buyer Profiles ---
-  public readonly buyerProfiles: BuyerProfilesRepository = {
-    upsertBuyerProfile: async (input) => {
-      const client = getSupabaseClient();
-      const now = new Date().toISOString();
-      const id = input.id || this.generateUUID();
-      const record: BuyerProfile = {
-        id,
-        lead_id: input.lead_id,
-        property_interest: input.property_interest ?? true,
-        property_type: input.property_type ?? null,
-        configuration: input.configuration ?? null,
-        purpose: input.purpose ?? 'Self-use',
-        budget_min: input.budget_min ?? null,
-        budget_max: input.budget_max ?? null,
-        currency: input.currency ?? 'INR',
-        preferred_locations: input.preferred_locations ?? [],
-        timeline: input.timeline ?? null,
-        financing: input.financing ?? null,
-        decision_maker: input.decision_maker ?? null,
-        requirements: input.requirements ?? [],
-        preferences: input.preferences ?? [],
-        qualification_status: input.qualification_status ?? 'PENDING',
-        intent_score: input.intent_score ?? null,
-        confidence_score: input.confidence_score ?? null,
-        created_at: now,
-        updated_at: now,
-      };
-
-      if (client) {
-        const { data, error } = await client
-          .from('buyer_profiles')
-          .upsert(record, { onConflict: 'lead_id' })
-          .select()
-          .single();
-        if (error) {
-          console.error('[Supabase Upsert Error] buyer_profiles:', error);
-          throw new Error(`Supabase upsert failed on buyer_profiles: ${error.message}`);
-        }
-        if (data) {
-          this.buyerProfilesStore.set(data.lead_id, data);
-          return data;
-        }
-      }
-
-      this.buyerProfilesStore.set(record.lead_id, record);
-      return record;
-    },
-
-    getBuyerProfile: async (leadId: string) => {
-      const client = getSupabaseClient();
-      if (client) {
-        const { data, error } = await client.from('buyer_profiles').select('*').eq('lead_id', leadId).maybeSingle();
-        if (error) {
-          console.error('[Supabase Query Error] buyer_profiles:', error);
-          throw new Error(`Supabase query failed on buyer_profiles: ${error.message}`);
-        }
-        if (data) return data;
-      }
-      return this.buyerProfilesStore.get(leadId) || null;
-    },
-  };
-
-  // --- Buyer Preferences ---
-  public readonly buyerPreferences: BuyerPreferencesRepository = {
-    addBuyerPreference: async (input) => {
-      const client = getSupabaseClient();
-      const now = new Date().toISOString();
-      const id = input.id || this.generateUUID();
-      const record: BuyerPreference = {
-        id,
-        lead_id: input.lead_id,
-        attribute: input.attribute,
-        value: input.value,
-        source: input.source ?? 'CONVERSATION',
-        confidence: input.confidence ?? 0.8,
-        is_explicit: input.is_explicit ?? true,
-        is_verified: input.is_verified ?? false,
-        created_at: now,
-      };
-
-      if (client) {
-        const { data, error } = await client.from('buyer_preferences').insert(record).select().single();
-        if (error) {
-          console.error('[Supabase Insert Error] buyer_preferences:', error);
-          throw new Error(`Supabase insert failed on buyer_preferences: ${error.message}`);
-        }
-        if (data) return data;
-      }
-
-      const list = this.buyerPreferencesStore.get(record.lead_id) || [];
-      list.push(record);
-      this.buyerPreferencesStore.set(record.lead_id, list);
-      return record;
-    },
-
-    getBuyerPreferences: async (leadId: string) => {
-      const client = getSupabaseClient();
-      if (client) {
-        const { data, error } = await client.from('buyer_preferences').select('*').eq('lead_id', leadId);
-        if (error) {
-          console.error('[Supabase Query Error] buyer_preferences:', error);
-          throw new Error(`Supabase query failed on buyer_preferences: ${error.message}`);
-        }
-        if (data) return data;
-      }
-      return this.buyerPreferencesStore.get(leadId) || [];
-    },
-  };
-
-  // --- Projects ---
-  public readonly projects: ProjectsRepository = {
-    createProject: async (input) => {
-      const client = getSupabaseClient();
-      const now = new Date().toISOString();
-      const id = input.id || this.generateUUID();
-      const record: DbProject = {
-        id,
-        project_code: input.project_code,
-        project_name: input.project_name,
-        developer_name: input.developer_name ?? null,
-        city: input.city ?? null,
-        locality: input.locality ?? null,
-        micro_market: input.micro_market ?? null,
-        property_type: input.property_type ?? null,
-        configurations: input.configurations ?? null,
-        price_min: input.price_min ?? null,
-        price_max: input.price_max ?? null,
-        possession: input.possession ?? null,
-        project_description: input.project_description ?? null,
-        features: input.features ?? null,
-        amenities: input.amenities ?? null,
-        project_url: input.project_url ?? null,
-        status: input.status ?? 'ACTIVE',
-        created_at: now,
-        updated_at: now,
-      };
-
-      if (client) {
-        const { data, error } = await client.from('projects').insert(record).select().single();
-        if (error) {
-          console.error('[Supabase Insert Error] projects:', error);
-          throw new Error(`Supabase insert failed on projects: ${error.message}`);
-        }
-        if (data) {
-          this.projectsStore.set(data.id, data);
-          return data;
-        }
-      }
-
-      this.projectsStore.set(record.id, record);
-      return record;
-    },
-
-    getProject: async (id: string) => {
-      const client = getSupabaseClient();
-      if (client) {
-        const { data, error } = await client.from('projects').select('*').eq('id', id).maybeSingle();
-        if (error) {
-          console.error('[Supabase Query Error] projects:', error);
-          throw new Error(`Supabase query failed on projects: ${error.message}`);
-        }
-        if (data) return data;
-      }
-      return this.projectsStore.get(id) || null;
-    },
-
-    getProjectByCode: async (projectCode: string) => {
-      const client = getSupabaseClient();
-      if (client) {
-        const { data, error } = await client.from('projects').select('*').eq('project_code', projectCode).maybeSingle();
-        if (error) {
-          console.error('[Supabase Query Error] projects:', error);
-          throw new Error(`Supabase query failed on projects: ${error.message}`);
-        }
-        if (data) return data;
-      }
-      for (const p of this.projectsStore.values()) {
-        if (p.project_code === projectCode) return p;
-      }
-      return null;
-    },
-
-    listProjects: async (filter) => {
-      const client = getSupabaseClient();
-      if (client) {
-        let query = client.from('projects').select('*');
-        if (filter?.city) query = query.eq('city', filter.city);
-        if (filter?.status) query = query.eq('status', filter.status);
-        if (filter?.limit) query = query.limit(filter.limit);
-        const { data, error } = await query;
-        if (error) {
-          console.error('[Supabase Query Error] projects:', error);
-          throw new Error(`Supabase query failed on projects: ${error.message}`);
-        }
-        if (data) return data;
-      }
-
-      let all = Array.from(this.projectsStore.values());
-      if (filter?.city) {
-        all = all.filter((p) => p.city?.toLowerCase() === filter.city?.toLowerCase());
-      }
-      if (filter?.status) {
-        all = all.filter((p) => p.status === filter.status);
-      }
-      if (filter?.limit) {
-        all = all.slice(0, filter.limit);
-      }
-      return all;
-    },
-  };
-
-  // --- Project Matches ---
-  public readonly projectMatches: ProjectMatchesRepository = {
-    upsertProjectMatch: async (input) => {
-      const client = getSupabaseClient();
-      const now = new Date().toISOString();
-      const id = input.id || this.generateUUID();
-      const record: DbProjectMatch = {
-        id,
-        lead_id: input.lead_id,
-        project_id: input.project_id,
-        match_score: input.match_score ?? null,
-        budget_score: input.budget_score ?? null,
-        location_score: input.location_score ?? null,
-        configuration_score: input.configuration_score ?? null,
-        purpose_score: input.purpose_score ?? null,
-        preference_score: input.preference_score ?? null,
-        timeline_score: input.timeline_score ?? null,
-        buyer_confirmed: input.buyer_confirmed ?? false,
-        reason: input.reason ?? null,
-        created_at: now,
-      };
-
-      if (client) {
-        const { data, error } = await client
-          .from('project_matches')
-          .upsert(record, { onConflict: 'lead_id,project_id' })
-          .select()
-          .single();
-        if (error) {
-          console.error('[Supabase Upsert Error] project_matches:', error);
-          throw new Error(`Supabase upsert failed on project_matches: ${error.message}`);
-        }
-        if (data) return data;
-      }
-
-      const list = this.projectMatchesStore.get(record.lead_id) || [];
-      const filtered = list.filter((m) => m.project_id !== record.project_id);
-      filtered.push(record);
-      this.projectMatchesStore.set(record.lead_id, filtered);
-      return record;
-    },
-
-    getProjectMatches: async (leadId: string) => {
-      const client = getSupabaseClient();
-      if (client) {
-        const { data, error } = await client.from('project_matches').select('*').eq('lead_id', leadId);
-        if (error) {
-          console.error('[Supabase Query Error] project_matches:', error);
-          throw new Error(`Supabase query failed on project_matches: ${error.message}`);
-        }
-        if (data) return data;
-      }
-      return this.projectMatchesStore.get(leadId) || [];
-    },
-  };
-
-  // --- Buyer Scores ---
-  public readonly buyerScores: BuyerScoresRepository = {
-    createBuyerScore: async (input) => {
-      const client = getSupabaseClient();
-      const now = new Date().toISOString();
-      const id = input.id || this.generateUUID();
-      const record: BuyerScore = {
-        id,
-        lead_id: input.lead_id,
-        intent_score: input.intent_score ?? null,
-        budget_score: input.budget_score ?? null,
-        location_score: input.location_score ?? null,
-        timeline_score: input.timeline_score ?? null,
-        decision_score: input.decision_score ?? null,
-        project_fit_score: input.project_fit_score ?? null,
-        overall_score: input.overall_score ?? null,
-        qualification: input.qualification ?? 'NURTURE',
-        reason: input.reason ?? null,
-        created_at: now,
-      };
-
-      if (client) {
-        const { data, error } = await client.from('buyer_scores').insert(record).select().single();
-        if (error) {
-          console.error('[Supabase Insert Error] buyer_scores:', error);
-          throw new Error(`Supabase insert failed on buyer_scores: ${error.message}`);
-        }
-        if (data) return data;
-      }
-
-      const list = this.buyerScoresStore.get(record.lead_id) || [];
-      list.push(record);
-      this.buyerScoresStore.set(record.lead_id, list);
-      return record;
-    },
-
-    createBuyerScoreRecord: async (input) => {
-      const client = getSupabaseClient();
-      const now = new Date().toISOString();
-      const id = input.id || this.generateUUID();
-      const compScore = input.score ?? input.composite_score ?? input.total_score ?? 0;
-      const record: BuyerScoreRecord = {
-        id,
-        lead_id: input.lead_id,
-        qualification_id: input.qualification_id ?? null,
-        extraction_id: input.extraction_id ?? null,
-        score: compScore,
-        composite_score: compScore,
-        total_score: compScore,
-        scoring_confidence: input.scoring_confidence ?? 0.85,
-        tier: input.tier,
-        score_band: input.score_band,
-        score_status: input.score_status ?? (input.tier === 'TIER_4_REVIEW' ? 'REQUIRES_REVIEW' : 'CALCULATED'),
-        dimension_scores: input.dimension_scores,
-        components: input.components ?? input.breakdown ?? [],
-        breakdown: input.breakdown ?? input.components ?? [],
-        key_drivers: input.key_drivers ?? [],
-        risk_factors: input.risk_factors ?? [],
-        reason_codes: input.reason_codes ?? [],
-        sla_dispatch: input.sla_dispatch,
-        project_fit_status: input.project_fit_status ?? 'PENDING',
-        scoring_version: input.scoring_version ?? '1.0',
-        rule_version: input.rule_version ?? '1.0',
-        calculated_at: input.calculated_at ?? now,
-        created_at: now,
-        updated_at: now,
-      };
-
-      if (client) {
-        try {
-          const { data: existing } = await client
-            .from('buyer_scores')
-            .select('id')
-            .eq('qualification_id', record.qualification_id)
-            .eq('rule_version', record.rule_version)
-            .maybeSingle();
-
-          // Prepare clean payload matching database columns
-          const dbPayload = {
-            id: existing ? existing.id : record.id,
-            lead_id: record.lead_id,
-            qualification_id: record.qualification_id,
-            extraction_id: record.extraction_id,
-            composite_score: record.composite_score,
-            scoring_confidence: record.scoring_confidence,
-            tier: record.tier,
-            dimension_scores: record.dimension_scores,
-            breakdown: record.breakdown,
-            key_drivers: record.key_drivers,
-            risk_factors: record.risk_factors,
-            sla_dispatch: record.sla_dispatch,
-            scoring_version: record.scoring_version,
-            rule_version: record.rule_version,
-            created_at: record.created_at,
-            updated_at: record.updated_at,
-          };
-
-          let query;
-          if (existing) {
-            query = client.from('buyer_scores').update(dbPayload).eq('id', existing.id);
-          } else {
-            query = client.from('buyer_scores').insert(dbPayload);
-          }
-          const { data, error } = await query.select().single();
-          if (!error && data) {
-            const mergedRecord: BuyerScoreRecord = { ...record, ...data };
-            this.buyerScoreRecordsStore.set(mergedRecord.id, mergedRecord);
-            return mergedRecord;
-          }
-          if (error) {
-            console.warn('[Supabase Insert Error] buyer_scores fallback to in-memory:', error.message);
-          }
-        } catch (err) {
-          console.warn('[Supabase Insert Exception] buyer_scores fallback:', err);
-        }
-      }
-
-      this.buyerScoreRecordsStore.set(record.id, record);
-      return record;
-    },
-
-    getBuyerScore: async (id: string) => {
-      const client = getSupabaseClient();
-      if (client) {
-        try {
-          const { data, error } = await client.from('buyer_scores').select('*').eq('id', id).maybeSingle();
-          if (!error && data) return data;
-        } catch {
-          // ignore and fallback
-        }
-      }
-      return this.buyerScoreRecordsStore.get(id) || null;
-    },
-
-    getBuyerScoreByQualificationId: async (qualificationId: string, ruleVersion?: string) => {
-      const client = getSupabaseClient();
-      if (client) {
-        try {
-          let query = client.from('buyer_scores').select('*').eq('qualification_id', qualificationId);
-          if (ruleVersion) {
-            query = query.eq('rule_version', ruleVersion);
-          }
-          const { data, error } = await query.order('created_at', { ascending: false }).limit(1);
-          if (!error && data && data.length > 0) return data[0];
-        } catch {
-          // ignore and fallback
-        }
-      }
-      return (
-        Array.from(this.buyerScoreRecordsStore.values())
-          .filter((s) => {
-            if (s.qualification_id !== qualificationId) return false;
-            if (ruleVersion && s.rule_version !== ruleVersion) return false;
-            return true;
-          })
-          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0] || null
-      );
-    },
-
-    getBuyerScoresByLeadId: async (leadId: string) => {
-      const client = getSupabaseClient();
-      if (client) {
-        try {
-          const { data, error } = await client
-            .from('buyer_scores')
-            .select('*')
-            .eq('lead_id', leadId)
-            .order('created_at', { ascending: true });
-          if (!error && data) return data;
-        } catch {
-          // ignore and fallback
-        }
-      }
-      return Array.from(this.buyerScoreRecordsStore.values()).filter((s) => s.lead_id === leadId);
-    },
-
-    getLatestBuyerScore: async (leadId: string) => {
-      const client = getSupabaseClient();
-      if (client) {
-        const { data, error } = await client
-          .from('buyer_scores')
-          .select('*')
-          .eq('lead_id', leadId)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        if (error) {
-          console.error('[Supabase Query Error] buyer_scores:', error);
-          throw new Error(`Supabase query failed on buyer_scores: ${error.message}`);
-        }
-        if (data) return data;
-      }
-
-      const list = this.buyerScoresStore.get(leadId) || [];
-      if (list.length === 0) return null;
-      return list[list.length - 1];
-    },
-
-    getLatestBuyerScoreRecord: async (leadId: string) => {
-      const client = getSupabaseClient();
-      if (client) {
-        try {
-          const { data, error } = await client
-            .from('buyer_scores')
-            .select('*')
-            .eq('lead_id', leadId)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-          if (!error && data) return data;
-        } catch {
-          // ignore and fallback
-        }
-      }
-      const list = Array.from(this.buyerScoreRecordsStore.values())
-        .filter((s) => s.lead_id === leadId)
-        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-      return list[0] || null;
-    },
-
-    listPriorityQueue: async (filter?: { tier?: string; limit?: number }) => {
-      const scores = Array.from(this.buyerScoreRecordsStore.values());
-      const queue: PriorityQueueItem[] = [];
-
-      for (const score of scores) {
-        if (filter?.tier && score.tier !== filter.tier) continue;
-
-        const lead = await this.leads.getLead(score.lead_id);
-        const qualification = score.qualification_id
-          ? await this.qualifications.getQualification(score.qualification_id)
-          : null;
-        const profile = await this.buyerProfiles.getBuyerProfile(score.lead_id);
-
-        const now = Date.now();
-        const deadlineTime = new Date(score.sla_dispatch.sla_deadline).getTime();
-        const minutesRemaining = Math.max(0, Math.round((deadlineTime - now) / (60 * 1000)));
-
-        const preferredLocations = Array.isArray(profile?.preferred_locations)
-          ? (profile.preferred_locations as string[])
-          : [];
-
-        queue.push({
-          lead_id: score.lead_id,
-          external_lead_id: lead?.lead_id || score.lead_id,
-          buyer_name: lead?.name || 'Unknown Buyer',
-          phone: lead?.phone || '',
-          composite_score: score.composite_score,
-          tier: score.tier,
-          qualification_status: qualification?.qualification_status || 'PARTIALLY_QUALIFIED',
-          sla_deadline: score.sla_dispatch.sla_deadline,
-          sla_minutes_remaining: minutesRemaining,
-          assigned_role: score.sla_dispatch.assigned_role,
-          follow_up_urgency: score.sla_dispatch.follow_up_urgency,
-          preferred_locations: preferredLocations,
-          property_type: profile?.property_type || 'Apartment',
-          key_highlights: score.key_drivers,
-          talking_points: score.sla_dispatch.talking_points,
-          score_id: score.id,
-          created_at: score.created_at,
-        });
-      }
-
-      // Sort by priority rank (1 is highest), composite_score DESC, sla_deadline ASC
-      queue.sort((a, b) => {
-        if (b.composite_score !== a.composite_score) {
-          return b.composite_score - a.composite_score;
-        }
-        return new Date(a.sla_deadline).getTime() - new Date(b.sla_deadline).getTime();
-      });
-
-      if (filter?.limit) {
-        return queue.slice(0, filter.limit);
-      }
-      return queue;
-    },
-  };
-
-  // --- Lead Events ---
-  public readonly leadEvents: LeadEventsRepository = {
-    appendLeadEvent: async (input) => {
-      const client = getSupabaseClient();
-      const now = new Date().toISOString();
-      const id = input.id || this.generateUUID();
-      const record: LeadEvent = {
-        id,
-        lead_id: input.lead_id,
-        event_type: input.event_type,
-        event_data: input.event_data ?? null,
-        created_at: now,
-      };
-
-      if (client) {
-        const { data, error } = await client.from('lead_events').insert(record).select().single();
-        if (error) {
-          console.error('[Supabase Insert Error] lead_events:', error);
-          throw new Error(`Supabase insert failed on lead_events: ${error.message}`);
-        }
-        if (data) return data;
-      }
-
-      const list = this.leadEventsStore.get(record.lead_id) || [];
-      list.push(record);
-      this.leadEventsStore.set(record.lead_id, list);
-      return record;
-    },
-
-    getLeadEvents: async (leadId: string) => {
-      const client = getSupabaseClient();
-      if (client) {
-        const { data, error } = await client
-          .from('lead_events')
-          .select('*')
-          .eq('lead_id', leadId)
-          .order('created_at', { ascending: true });
-        if (error) {
-          console.error('[Supabase Query Error] lead_events:', error);
-          throw new Error(`Supabase query failed on lead_events: ${error.message}`);
-        }
-        if (data) return data;
-      }
-      return this.leadEventsStore.get(leadId) || [];
-    },
-  };
-
-  // --- Call Transcripts (Phase 5A) ---
-  public readonly transcripts: CallTranscriptsRepository = {
-    createTranscript: async (input) => {
-      const client = getSupabaseClient();
-      const now = new Date().toISOString();
-      const id = input.id || this.generateUUID();
-      const record: CallTranscript = {
-        id,
-        lead_id: input.lead_id,
-        call_id: input.call_id,
-        provider_call_id: input.provider_call_id ?? null,
-        interaction_id: input.interaction_id ?? null,
-        transcript_text: input.transcript_text,
-        transcript_turns: input.transcript_turns ?? null,
-        language: input.language ?? 'unknown',
-        duration_seconds: input.duration_seconds ?? null,
-        source: input.source ?? 'sarvam',
-        source_event_type: input.source_event_type ?? null,
-        ingestion_status: input.ingestion_status ?? 'INGESTED',
-        ingestion_version: input.ingestion_version ?? 'v1',
-        captured_at: input.captured_at || now,
-        created_at: now,
-        updated_at: now,
-      };
-
-      if (client) {
-        try {
-          const { data, error } = await client.from('call_transcripts').insert(record).select().single();
-          if (error) {
-            // If table doesn't exist yet on remote instance, fallback to local store
-            if (error.code === 'PGRST205' || error.message?.includes('not find the table')) {
-              console.warn('[Supabase Fallback] call_transcripts table not found on remote; using in-memory store.');
-            } else {
-              console.error('[Supabase Insert Error] call_transcripts:', error);
-            }
-          } else if (data) {
-            this.transcriptsStore.set(data.id, data);
-            return data;
-          }
-        } catch (err) {
-          console.warn('[Supabase Insert Exception] call_transcripts fallback:', err);
-        }
-      }
-
-      this.transcriptsStore.set(record.id, record);
-      return record;
-    },
-
-    getTranscript: async (id: string) => {
-      const client = getSupabaseClient();
-      if (client) {
-        try {
-          const { data, error } = await client.from('call_transcripts').select('*').eq('id', id).maybeSingle();
-          if (!error && data) return data;
-        } catch {
-          // ignore and fallback
-        }
-      }
-      return this.transcriptsStore.get(id) || null;
-    },
-
-    getTranscriptByCallId: async (callId: string) => {
-      const client = getSupabaseClient();
-      if (client) {
-        try {
-          const { data, error } = await client
-            .from('call_transcripts')
-            .select('*')
-            .eq('call_id', callId)
-            .maybeSingle();
-          if (!error && data) return data;
-        } catch {
-          // ignore and fallback
-        }
-      }
-      return Array.from(this.transcriptsStore.values()).find((t) => t.call_id === callId) || null;
-    },
-
-    getTranscriptByProviderCallId: async (providerCallId: string) => {
-      const client = getSupabaseClient();
-      if (client) {
-        try {
-          const { data, error } = await client
-            .from('call_transcripts')
-            .select('*')
-            .eq('provider_call_id', providerCallId)
-            .order('created_at', { ascending: false })
-            .limit(1);
-          if (!error && data && data.length > 0) return data[0];
-        } catch {
-          // ignore and fallback
-        }
-      }
-      return Array.from(this.transcriptsStore.values()).find((t) => t.provider_call_id === providerCallId) || null;
-    },
-
-    getTranscriptsByLeadId: async (leadId: string) => {
-      const client = getSupabaseClient();
-      if (client) {
-        try {
-          const { data, error } = await client
-            .from('call_transcripts')
-            .select('*')
-            .eq('lead_id', leadId)
-            .order('created_at', { ascending: true });
-          if (!error && data) return data;
-        } catch {
-          // ignore and fallback
-        }
-      }
-      return Array.from(this.transcriptsStore.values()).filter((t) => t.lead_id === leadId);
-    },
-  };
-
-  public extractions: ConversationExtractionsRepository = {
-    createExtraction: async (extraction) => {
-      const now = new Date().toISOString();
-      const record: ConversationExtraction = {
-        id: extraction.id || this.generateUUID(),
-        lead_id: extraction.lead_id,
-        call_id: extraction.call_id,
-        transcript_id: extraction.transcript_id,
-        provider_call_id: extraction.provider_call_id ?? null,
-        interaction_id: extraction.interaction_id ?? null,
-        model: extraction.model,
-        prompt_version: extraction.prompt_version ?? '1.0',
-        schema_version: extraction.schema_version ?? '1.0',
-        extraction_status: (extraction.extraction_status as ConversationExtraction['extraction_status']) ?? 'EXTRACTED',
-        extracted_data: extraction.extracted_data ?? null,
-        raw_gemini_response: extraction.raw_gemini_response ?? null,
-        error_message: extraction.error_message ?? null,
-        created_at: now,
-        updated_at: now,
-      };
-
-      const client = getSupabaseClient();
-      if (client) {
-        try {
-          const { data: existing } = await client
-            .from('conversation_extractions')
-            .select('id')
-            .eq('transcript_id', record.transcript_id)
-            .eq('schema_version', record.schema_version)
-            .eq('prompt_version', record.prompt_version)
-            .maybeSingle();
-
-          let query;
-          if (existing) {
-            query = client.from('conversation_extractions').update(record).eq('id', existing.id);
-          } else {
-            query = client.from('conversation_extractions').insert(record);
-          }
-          const { data, error } = await query.select().single();
-          if (!error && data) {
-            this.extractionsStore.set(data.id, data);
-            return data;
-          }
-          if (error) {
-            console.warn('[Supabase Insert Error] conversation_extractions fallback to in-memory:', error.message);
-          }
-        } catch (err) {
-          console.warn('[Supabase Insert Exception] conversation_extractions fallback:', err);
-        }
-      }
-
-      this.extractionsStore.set(record.id, record);
-      return record;
-    },
-
-    getExtraction: async (id: string) => {
-      const client = getSupabaseClient();
-      if (client) {
-        try {
-          const { data, error } = await client.from('conversation_extractions').select('*').eq('id', id).maybeSingle();
-          if (!error && data) return data;
-        } catch {
-          // ignore and fallback
-        }
-      }
-      return this.extractionsStore.get(id) || null;
-    },
-
-    getExtractionByTranscriptId: async (transcriptId: string, schemaVersion?: string, promptVersion?: string) => {
-      const client = getSupabaseClient();
-      if (client) {
-        try {
-          let query = client.from('conversation_extractions').select('*').eq('transcript_id', transcriptId);
-          if (schemaVersion) {
-            query = query.eq('schema_version', schemaVersion);
-          }
-          if (promptVersion) {
-            query = query.eq('prompt_version', promptVersion);
-          }
-          const { data, error } = await query.order('created_at', { ascending: false }).limit(1);
-          if (!error && data && data.length > 0) return data[0];
-        } catch {
-          // ignore and fallback
-        }
-      }
-      return (
-        Array.from(this.extractionsStore.values())
-          .filter((e) => {
-            if (e.transcript_id !== transcriptId) return false;
-            if (schemaVersion && e.schema_version !== schemaVersion) return false;
-            if (promptVersion && e.prompt_version !== promptVersion) return false;
-            return true;
-          })
-          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0] || null
-      );
-    },
-
-    getExtractionByCallId: async (callId: string) => {
-      const client = getSupabaseClient();
-      if (client) {
-        try {
-          const { data, error } = await client
-            .from('conversation_extractions')
-            .select('*')
-            .eq('call_id', callId)
-            .order('created_at', { ascending: false })
-            .limit(1);
-          if (!error && data && data.length > 0) return data[0];
-        } catch {
-          // ignore and fallback
-        }
-      }
-      return (
-        Array.from(this.extractionsStore.values())
-          .filter((e) => e.call_id === callId)
-          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0] || null
-      );
-    },
-
-    getExtractionsByLeadId: async (leadId: string) => {
-      const client = getSupabaseClient();
-      if (client) {
-        try {
-          const { data, error } = await client
-            .from('conversation_extractions')
-            .select('*')
-            .eq('lead_id', leadId)
-            .order('created_at', { ascending: true });
-          if (!error && data) return data;
-        } catch {
-          // ignore and fallback
-        }
-      }
-      return Array.from(this.extractionsStore.values()).filter((e) => e.lead_id === leadId);
-    },
-  };
-
-  public qualifications: BuyerQualificationsRepository = {
-    createQualification: async (qualification) => {
-      const now = new Date().toISOString();
-      const record: BuyerQualification = {
-        id: qualification.id || this.generateUUID(),
-        lead_id: qualification.lead_id,
-        extraction_id: qualification.extraction_id,
-        qualification_status: qualification.qualification_status,
-        reason_codes: qualification.reason_codes ?? [],
-        blocking_fields: qualification.blocking_fields ?? [],
-        follow_up_fields: qualification.follow_up_fields ?? [],
-        dimension_assessments: qualification.dimension_assessments ?? {},
-        evidence_refs: qualification.evidence_refs ?? [],
-        qualification_version: qualification.qualification_version ?? '1.0',
-        rule_version: qualification.rule_version ?? '1.0',
-        created_at: now,
-        updated_at: now,
-      };
-
-      const client = getSupabaseClient();
-      if (client) {
-        try {
-          const { data: existing } = await client
-            .from('buyer_qualifications')
-            .select('id')
-            .eq('extraction_id', record.extraction_id)
-            .eq('rule_version', record.rule_version)
-            .maybeSingle();
-
-          let query;
-          if (existing) {
-            query = client.from('buyer_qualifications').update(record).eq('id', existing.id);
-          } else {
-            query = client.from('buyer_qualifications').insert(record);
-          }
-          const { data, error } = await query.select().single();
-          if (!error && data) {
-            this.qualificationsStore.set(data.id, data);
-            return data;
-          }
-          if (error) {
-            console.warn('[Supabase Insert Error] buyer_qualifications fallback to in-memory:', error.message);
-          }
-        } catch (err) {
-          console.warn('[Supabase Insert Exception] buyer_qualifications fallback:', err);
-        }
-      }
-
-      this.qualificationsStore.set(record.id, record);
-      return record;
-    },
-
-    getQualification: async (id: string) => {
-      const client = getSupabaseClient();
-      if (client) {
-        try {
-          const { data, error } = await client.from('buyer_qualifications').select('*').eq('id', id).maybeSingle();
-          if (!error && data) return data;
-        } catch {
-          // ignore and fallback
-        }
-      }
-      return this.qualificationsStore.get(id) || null;
-    },
-
-    getQualificationByExtractionId: async (extractionId: string, ruleVersion?: string) => {
-      const client = getSupabaseClient();
-      if (client) {
-        try {
-          let query = client.from('buyer_qualifications').select('*').eq('extraction_id', extractionId);
-          if (ruleVersion) {
-            query = query.eq('rule_version', ruleVersion);
-          }
-          const { data, error } = await query.order('created_at', { ascending: false }).limit(1);
-          if (!error && data && data.length > 0) return data[0];
-        } catch {
-          // ignore and fallback
-        }
-      }
-      return (
-        Array.from(this.qualificationsStore.values())
-          .filter((q) => {
-            if (q.extraction_id !== extractionId) return false;
-            if (ruleVersion && q.rule_version !== ruleVersion) return false;
-            return true;
-          })
-          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0] || null
-      );
-    },
-
-    getQualificationsByLeadId: async (leadId: string) => {
-      const client = getSupabaseClient();
-      if (client) {
-        try {
-          const { data, error } = await client
-            .from('buyer_qualifications')
-            .select('*')
-            .eq('lead_id', leadId)
-            .order('created_at', { ascending: true });
-          if (!error && data) return data;
-        } catch {
-          // ignore and fallback
-        }
-      }
-      return Array.from(this.qualificationsStore.values()).filter((q) => q.lead_id === leadId);
-    },
-  };
-
-  // --- Broker Handoffs (Phase 5F) ---
-  public brokerHandoffs: BrokerHandoffRepository = {
-    createHandoff: async (input) => {
-      const now = new Date().toISOString();
-      const id = input.id || this.generateUUID();
-      const record: DbBrokerHandoff = {
-        id,
-        lead_id: input.lead_id,
-        qualification_id: input.qualification_id ?? null,
-        score_id: input.score_id ?? null,
-        extraction_id: input.extraction_id ?? null,
-        transcript_id: input.transcript_id ?? null,
-        call_id: input.call_id ?? null,
-        handoff_payload: input.handoff_payload,
-        handoff_status: input.handoff_status,
-        routing_status: input.routing_status,
-        assigned_role: input.assigned_role ?? null,
-        assigned_team: input.assigned_team ?? null,
-        priority_tier: input.priority_tier,
-        sla_minutes: input.sla_minutes,
-        sla_deadline: input.sla_deadline,
-        dispatch_channel: input.dispatch_channel ?? null,
-        dispatch_status: input.dispatch_status ?? 'PENDING',
-        dispatch_id: input.dispatch_id ?? null,
-        handoff_version: input.handoff_version ?? '1.0',
-        rule_version: input.rule_version ?? '1.0',
-        created_at: now,
-        updated_at: now,
-      };
-
-      const client = getSupabaseClient();
-      if (client) {
-        try {
-          const { data: existing } = await client
-            .from('broker_handoffs')
-            .select('id')
-            .eq('score_id', record.score_id)
-            .eq('rule_version', record.rule_version)
-            .maybeSingle();
-
-          let query;
-          if (existing) {
-            query = client.from('broker_handoffs').update(record).eq('id', existing.id);
-          } else {
-            query = client.from('broker_handoffs').insert(record);
-          }
-          const { data, error } = await query.select().single();
-          if (!error && data) {
-            this.brokerHandoffsStore.set(data.id, data);
-            return data;
-          }
-        } catch {
-          // fallback to in-memory store
-        }
-      }
-
-      this.brokerHandoffsStore.set(record.id, record);
-      return record;
-    },
-
-    getHandoff: async (id: string) => {
-      const client = getSupabaseClient();
-      if (client) {
-        try {
-          const { data, error } = await client.from('broker_handoffs').select('*').eq('id', id).maybeSingle();
-          if (!error && data) return data;
-        } catch {
-          // fallback
-        }
-      }
-      return this.brokerHandoffsStore.get(id) || null;
-    },
-
-    getHandoffsByLeadId: async (leadId: string) => {
-      const client = getSupabaseClient();
-      if (client) {
-        try {
-          const { data, error } = await client
-            .from('broker_handoffs')
-            .select('*')
-            .eq('lead_id', leadId)
-            .order('created_at', { ascending: false });
-          if (!error && data) return data;
-        } catch {
-          // fallback
-        }
-      }
-      return Array.from(this.brokerHandoffsStore.values())
-        .filter((h) => h.lead_id === leadId)
-        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-    },
-
-    getHandoffByScoreId: async (scoreId: string, ruleVersion?: string) => {
-      const client = getSupabaseClient();
-      if (client) {
-        try {
-          let query = client.from('broker_handoffs').select('*').eq('score_id', scoreId);
-          if (ruleVersion) {
-            query = query.eq('rule_version', ruleVersion);
-          }
-          const { data, error } = await query.order('created_at', { ascending: false }).limit(1);
-          if (!error && data && data.length > 0) return data[0];
-        } catch {
-          // fallback
-        }
-      }
-      return (
-        Array.from(this.brokerHandoffsStore.values())
-          .filter((h) => {
-            if (h.score_id !== scoreId) return false;
-            if (ruleVersion && h.rule_version !== ruleVersion) return false;
-            return true;
-          })
-          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0] || null
-      );
-    },
-
-    getLatestHandoff: async (leadId: string) => {
-      const handoffs = await this.brokerHandoffs.getHandoffsByLeadId(leadId);
-      return handoffs.length > 0 ? handoffs[0] : null;
-    },
-
-    updateStatus: async (id: string, handoffStatus: BrokerHandoffReadiness, routingStatus?: BrokerRoutingStatus) => {
-      const existing = await this.brokerHandoffs.getHandoff(id);
-      if (!existing) {
-        throw new Error(`Broker handoff with id ${id} not found.`);
-      }
-      const now = new Date().toISOString();
-      const updatedPayload = {
-        ...existing.handoff_payload,
-        handoff_status: handoffStatus,
-        routing_status: routingStatus || existing.routing_status,
-        updated_at: now,
-      };
-
-      const updatedRecord: DbBrokerHandoff = {
-        ...existing,
-        handoff_status: handoffStatus,
-        routing_status: routingStatus || existing.routing_status,
-        handoff_payload: updatedPayload,
-        updated_at: now,
-      };
-
-      const client = getSupabaseClient();
-      if (client) {
-        try {
-          const { data, error } = await client
-            .from('broker_handoffs')
-            .update(updatedRecord)
-            .eq('id', id)
-            .select()
-            .single();
-          if (!error && data) {
-            this.brokerHandoffsStore.set(data.id, data);
-            return data;
-          }
-        } catch {
-          // fallback
-        }
-      }
-
-      this.brokerHandoffsStore.set(id, updatedRecord);
-      return updatedRecord;
-    },
-
-    updateDispatchStatus: async (id: string, dispatchStatus: BrokerDispatchStatus, dispatchId?: string, channel?: string) => {
-      const existing = await this.brokerHandoffs.getHandoff(id);
-      if (!existing) {
-        throw new Error(`Broker handoff with id ${id} not found.`);
-      }
-      const now = new Date().toISOString();
-      const updatedPayload = {
-        ...existing.handoff_payload,
-        dispatch_status: dispatchStatus,
-        dispatch_id: dispatchId ?? existing.dispatch_id,
-        dispatch_channel: channel ?? existing.dispatch_channel,
-        updated_at: now,
-      };
-
-      const updatedRecord: DbBrokerHandoff = {
-        ...existing,
-        dispatch_status: dispatchStatus,
-        dispatch_id: dispatchId ?? existing.dispatch_id,
-        dispatch_channel: channel ?? existing.dispatch_channel,
-        handoff_payload: updatedPayload,
-        updated_at: now,
-      };
-
-      const client = getSupabaseClient();
-      if (client) {
-        try {
-          const { data, error } = await client
-            .from('broker_handoffs')
-            .update(updatedRecord)
-            .eq('id', id)
-            .select()
-            .single();
-          if (!error && data) {
-            this.brokerHandoffsStore.set(data.id, data);
-            return data;
-          }
-        } catch {
-          // fallback
-        }
-      }
-
-      this.brokerHandoffsStore.set(id, updatedRecord);
-      return updatedRecord;
-    },
-
-    listHandoffQueue: async (filter) => {
-      const tierRank = (tier: string): number => {
-        switch (tier) {
-          case 'TIER_1_HOT':
-            return 1;
-          case 'TIER_2_WARM':
-            return 2;
-          case 'TIER_3_NURTURE':
-            return 3;
-          case 'TIER_4_REVIEW':
-            return 4;
-          default:
-            return 5;
-        }
-      };
-
-      let handoffs = Array.from(this.brokerHandoffsStore.values());
-
-      if (filter?.tier) {
-        handoffs = handoffs.filter((h) => h.priority_tier === filter.tier);
-      }
-      if (filter?.status) {
-        handoffs = handoffs.filter((h) => h.handoff_status === filter.status);
-      }
-
-      const queueItems: HandoffQueueItem[] = [];
-
-      for (const h of handoffs) {
-        const payload = h.handoff_payload;
-        const lead = await this.leads.getLead(h.lead_id);
-        const topProj = payload?.project_recommendations?.[0];
-        const primaryReq = payload?.requirements?.[0];
-        const reqStr = primaryReq
-          ? `${primaryReq.property_type || 'Residential'} ${primaryReq.configuration || ''} in ${(primaryReq.preferred_locations || []).join(', ')}`.trim()
-          : 'Property requirement';
-
-        const deadline = h.sla_deadline ? new Date(h.sla_deadline).getTime() : NaN;
-        const nowMs = Date.now();
-        const minsRemaining = isNaN(deadline) ? 0 : Math.round((deadline - nowMs) / 60000);
-
-        queueItems.push({
-          handoff_id: h.id,
-          lead_id: h.lead_id,
-          external_lead_id: lead?.lead_id || payload?.external_lead_id || 'GF-UNK',
-          buyer_name: lead?.name || payload?.primary_buyer_summary?.name || 'Unknown Buyer',
-          phone: lead?.phone || payload?.primary_buyer_summary?.phone || '',
-          score: payload?.priority?.score ?? 0,
-          tier: h.priority_tier,
-          sla_deadline: h.sla_deadline || new Date().toISOString(),
-          sla_minutes_remaining: minsRemaining,
-          assigned_role: h.assigned_role || 'INBOUND_SALES_SPECIALIST',
-          assigned_team: h.assigned_team || 'INBOUND_SALES',
-          urgency: payload?.priority?.urgency || 'MEDIUM',
-          handoff_status: h.handoff_status,
-          routing_status: h.routing_status,
-          dispatch_status: h.dispatch_status,
-          primary_requirement: reqStr,
-          top_project: topProj ? `${topProj.project_name} (${topProj.match_score}% Match)` : null,
-          missing_information: payload?.missing_information || [],
-          recommended_action: payload?.recommended_action || 'Contact buyer',
-          created_at: h.created_at,
-        });
-      }
-
-      // Sort: Tier Priority ASC, SLA Deadline ASC, Score DESC, Created ASC
-      queueItems.sort((a, b) => {
-        const rankA = tierRank(a.tier);
-        const rankB = tierRank(b.tier);
-        if (rankA !== rankB) return rankA - rankB;
-        const deadlineA = a.sla_deadline ? new Date(a.sla_deadline).getTime() : 0;
-        const deadlineB = b.sla_deadline ? new Date(b.sla_deadline).getTime() : 0;
-        const safeDeadA = isNaN(deadlineA) ? 0 : deadlineA;
-        const safeDeadB = isNaN(deadlineB) ? 0 : deadlineB;
-        if (safeDeadA !== safeDeadB) return safeDeadA - safeDeadB;
-        if (b.score !== a.score) return b.score - a.score;
-        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-      });
-
-      if (filter?.limit) {
-        return queueItems.slice(0, filter.limit);
-      }
-
-      return queueItems;
-    },
-  };
-
-  // --- Persistence Verification & Round-Trip Diagnostic (Section 12) ---
-  public async verifyPersistenceRoundTrip(customLeadId?: string): Promise<{
+  // --- Persistence Verification & Round-Trip Diagnostic ---
+  public async verifyPersistenceRoundTrip(
+    scopeOrCustomLeadId?: TenantScope | TenantContext | string,
+    maybeCustomLeadId?: string
+  ): Promise<{
     success: boolean;
     isLiveSupabase: boolean;
     leadId: string;
@@ -1869,13 +250,24 @@ class SupabaseDataService {
     deletedSuccessfully: boolean;
     error?: string;
   }> {
+    const scope = resolveEffectiveTenantScope(
+      maybeCustomLeadId !== undefined
+        ? (scopeOrCustomLeadId as TenantScope)
+        : typeof scopeOrCustomLeadId === 'object'
+        ? (scopeOrCustomLeadId as TenantScope)
+        : undefined
+    );
+    const customLeadId =
+      maybeCustomLeadId ||
+      (typeof scopeOrCustomLeadId === 'string' && !scopeOrCustomLeadId.includes('00000000') ? scopeOrCustomLeadId : undefined);
+
     const testLeadId = customLeadId || `GF-DIAG-${Date.now()}`;
     const client = getSupabaseClient();
     const isLiveSupabase = client !== null;
 
     try {
       // 1. Insert test lead
-      const inserted = await this.leads.createLead({
+      const inserted = await this.leads.createLead(scope, {
         lead_id: testLeadId,
         name: 'Diagnostic Test Lead',
         phone: '+919999988888',
@@ -1886,24 +278,24 @@ class SupabaseDataService {
       });
 
       // 2. Read back lead by lead_id
-      const readBack = await this.leads.getLeadByLeadId(testLeadId);
+      const readBack = await this.leads.getLeadByLeadId(scope, testLeadId);
       if (!readBack || readBack.id !== inserted.id) {
         throw new Error(`Read-back verification failed: lead ${testLeadId} not found after creation.`);
       }
 
       // 3. Append test audit event
-      const event = await this.leadEvents.appendLeadEvent({
+      const event = await this.leadEvents.appendLeadEvent(scope, {
         lead_id: inserted.id,
         event_type: 'PERSISTENCE_DIAGNOSTIC_TEST',
         event_data: { test_run_at: new Date().toISOString() },
       });
 
-      const events = await this.leadEvents.getLeadEvents(inserted.id);
+      const events = await this.leadEvents.getLeadEvents(scope, inserted.id);
       const auditEventLogged = events.some((e) => e.id === event.id);
 
       // 4. Delete test lead to keep database clean
-      const deletedSuccessfully = await this.leads.deleteLead(inserted.id);
-      const postDeleteCheck = await this.leads.getLead(inserted.id);
+      const deletedSuccessfully = await this.leads.deleteLead(scope, inserted.id);
+      const postDeleteCheck = await this.leads.getLead(scope, inserted.id);
       if (postDeleteCheck !== null) {
         throw new Error(`Delete verification failed: lead ${inserted.id} still exists after deletion.`);
       }
@@ -1932,23 +324,28 @@ class SupabaseDataService {
     }
   }
 
-  // --- Canonical GF Buyer Lead Mapper (Section 8) ---
-  public async mapToGFBuyerLead(leadIdOrLeadUUID: string): Promise<GFBuyerLead | null> {
+  // --- Canonical GF Buyer Lead Mapper ---
+  public async mapToGFBuyerLead(
+    scopeOrLeadId: TenantScope | TenantContext | string,
+    maybeLeadId?: string
+  ): Promise<GFBuyerLead | null> {
+    const { scope, id: leadIdOrLeadUUID } = parseScopeAndId(scopeOrLeadId, maybeLeadId);
+
     // Look up lead by either internal UUID or external lead_id
-    let lead = await this.leads.getLead(leadIdOrLeadUUID);
+    let lead = await this.leads.getLead(scope, leadIdOrLeadUUID);
     if (!lead) {
-      lead = await this.leads.getLeadByLeadId(leadIdOrLeadUUID);
+      lead = await this.leads.getLeadByLeadId(scope, leadIdOrLeadUUID);
     }
     if (!lead) return null;
 
     const [enrichments, profile, prefs, matches, score, events, extractionsList] = await Promise.all([
-      this.leadEnrichment.getEnrichment(lead.id),
-      this.buyerProfiles.getBuyerProfile(lead.id),
-      this.buyerPreferences.getBuyerPreferences(lead.id),
-      this.projectMatches.getProjectMatches(lead.id),
-      this.buyerScores.getLatestBuyerScore(lead.id),
-      this.leadEvents.getLeadEvents(lead.id),
-      this.extractions.getExtractionsByLeadId(lead.id),
+      this.leadEnrichment.getEnrichment(scope, lead.id),
+      this.buyerProfiles.getBuyerProfile(scope, lead.id),
+      this.buyerPreferences.getBuyerPreferences(scope, lead.id),
+      this.projectMatches.getProjectMatches(scope, lead.id),
+      this.buyerScores.getLatestBuyerScore(scope, lead.id),
+      this.leadEvents.getLeadEvents(scope, lead.id),
+      this.extractions.getExtractionsByLeadId(scope, lead.id),
     ]);
 
     const latestEnrichment = enrichments.length > 0 ? enrichments[enrichments.length - 1] : null;
@@ -1959,7 +356,7 @@ class SupabaseDataService {
     // Map top matches
     const domainMatches: DomainProjectMatch[] = [];
     for (const m of matches) {
-      const proj = await this.projects.getProject(m.project_id);
+      const proj = await this.projects.getProject(scope, m.project_id);
       domainMatches.push({
         id: m.id,
         project_id: m.project_id,
