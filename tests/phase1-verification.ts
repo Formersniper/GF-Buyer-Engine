@@ -126,6 +126,7 @@ async function runAllTests() {
   );
   assert(resAmbiguous.outcome === 'AMBIGUOUS', 'Flagged conflicting identity as AMBIGUOUS');
   assert(resAmbiguous.workflowStatus === 'REQUIRES_REVIEW', 'Routed ambiguous lead to REQUIRES_REVIEW');
+  assert(resAmbiguous.leadId !== existingLead.lead_id, 'Ambiguous lead assigned new unique lead_id instead of reusing conflicting lead_id');
 
   // New distinct lead
   const resNew = resolveLead(

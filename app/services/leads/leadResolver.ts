@@ -238,7 +238,7 @@ export function resolveLead(
     if (namesDifferSignificantly) {
       return {
         outcome: 'AMBIGUOUS',
-        leadId: matchedLead.lead_id,
+        leadId: suggestedLeadId || generateLeadIdFromExisting(existingLeads),
         normalized,
         matchedExistingLead: matchedLead,
         workflowStatus: 'REQUIRES_REVIEW',

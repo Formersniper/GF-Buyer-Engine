@@ -257,6 +257,54 @@ class SupabaseDataService {
       if (client) {
         const { data, error } = await client.from('leads').insert(record).select().single();
         if (error) {
+          if (error.code === '23505') {
+            console.warn(`[Supabase Persistence Warning] Duplicate key conflict (code 23505) on lead_id "${input.lead_id}". Resolving lead record.`);
+            const { data: existingData, error: fetchErr } = await client
+              .from('leads')
+              .select('*')
+              .eq('lead_id', input.lead_id)
+              .maybeSingle();
+
+            if (!fetchErr && existingData) {
+              const samePhone = Boolean(input.phone && existingData.phone && input.phone.replace(/\D/g, '') === existingData.phone.replace(/\D/g, ''));
+              const sameEmail = Boolean(input.email && existingData.email && input.email.toLowerCase().trim() === existingData.email.toLowerCase().trim());
+
+              if (samePhone || sameEmail || (!input.phone && !input.email)) {
+                // Same identity duplicate: safely update non-null fields
+                const { data: updatedData } = await client
+                  .from('leads')
+                  .update({
+                    name: input.name ?? existingData.name,
+                    phone: input.phone ?? existingData.phone,
+                    email: input.email ?? existingData.email,
+                    source_reference: input.source_reference ?? existingData.source_reference,
+                    status: input.status ?? existingData.status,
+                    updated_at: now,
+                  })
+                  .eq('id', existingData.id)
+                  .select()
+                  .single();
+
+                const resolved = updatedData || existingData;
+                this.leadsStore.set(resolved.id, resolved);
+                return resolved;
+              } else {
+                // Sequence collision on distinct identity: insert with fresh unique lead_id
+                const freshLeadId = `${input.lead_id}-${Math.floor(1000 + Math.random() * 9000)}`;
+                const newRecord = { ...record, lead_id: freshLeadId };
+                const { data: freshData, error: freshErr } = await client
+                  .from('leads')
+                  .insert(newRecord)
+                  .select()
+                  .single();
+
+                if (!freshErr && freshData) {
+                  this.leadsStore.set(freshData.id, freshData);
+                  return freshData;
+                }
+              }
+            }
+          }
           console.error('[Supabase Persistence Error] Failed to insert lead:', error);
           throw new Error(`Supabase insert failed on public.leads: ${error.message} (code: ${error.code || 'UNKNOWN'})`);
         }
