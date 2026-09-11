@@ -7,3 +7,5 @@ export * from './qualification';
 export * from './scoring';
 export * from './matching';
 export * from './handoff';
+export * from './auth';
+export * from './tenant';

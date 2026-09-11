@@ -66,6 +66,7 @@ export interface ExtractedBuyerIntelligence {
 
 export interface ConversationExtraction {
   id: string; // UUID
+  tenant_id?: string; // UUID FK -> tenants.id
   lead_id: string; // UUID FK -> leads.id
   call_id: string; // UUID FK -> calls.id
   transcript_id: string; // UUID FK -> call_transcripts.id

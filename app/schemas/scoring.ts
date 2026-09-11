@@ -77,6 +77,7 @@ export interface SLAPriorityDispatch {
 
 export interface BuyerScoreRecord {
   id: string; // UUID
+  tenant_id?: string; // UUID FK -> tenants.id
   lead_id: string; // UUID FK -> leads.id
   qualification_id: string | null; // UUID FK -> buyer_qualifications.id
   extraction_id: string | null; // UUID FK -> conversation_extractions.id

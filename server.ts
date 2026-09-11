@@ -1,7 +1,8 @@
 import 'dotenv/config';
-import express from 'express';
+import express, { Express } from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
+import { requireAuth, requireRole } from './app/middleware/auth';
 import { callService } from './app/services/calls/callService';
 import { processSarvamWebhook } from './app/services/voice/sarvamWebhook';
 import { transcriptIngestionService } from './app/services/voice/transcriptIngestionService';
@@ -14,14 +15,13 @@ import { projectMatchingService } from './app/services/matching/projectMatchingS
 import { brokerHandoffService } from './app/services/handoff/brokerHandoffService';
 import { matchingAgent } from './app/agents/MatchingAgent';
 
-async function startServer() {
+export function createApp(): Express {
   const app = express();
-  const PORT = 3000;
 
   // JSON body parser
   app.use(express.json());
 
-  // --- API ROUTES ---
+  // --- PUBLIC API ROUTES ---
 
   // Health check
   app.get('/api/health', (req, res) => {
@@ -38,8 +38,22 @@ async function startServer() {
     }
   });
 
+  // Sarvam Webhook / Status Callback Handler (Provider authenticated via webhook secret)
+  app.post('/api/voice/sarvam/webhook', async (req, res) => {
+    try {
+      const payload = req.body;
+      const headers = req.headers as Record<string, string | string[] | undefined>;
+      const result = await processSarvamWebhook(payload, headers);
+      res.json(result);
+    } catch (err: unknown) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Webhook processing error' });
+    }
+  });
+
+  // --- PROTECTED API ROUTES (Require Authentication) ---
+
   // Start Outbound Voice Qualification Call
-  app.post('/api/voice/start-call', async (req, res) => {
+  app.post('/api/voice/start-call', requireAuth(), requireRole('SALES', 'ADMIN', 'OWNER'), async (req, res) => {
     try {
       const { leadId, customVariables } = req.body;
       if (!leadId) {
@@ -57,20 +71,8 @@ async function startServer() {
     }
   });
 
-  // Sarvam Webhook / Status Callback Handler
-  app.post('/api/voice/sarvam/webhook', async (req, res) => {
-    try {
-      const payload = req.body;
-      const headers = req.headers as Record<string, string | string[] | undefined>;
-      const result = await processSarvamWebhook(payload, headers);
-      res.json(result);
-    } catch (err: unknown) {
-      res.status(500).json({ error: err instanceof Error ? err.message : 'Webhook processing error' });
-    }
-  });
-
   // Call Status & Telemetry
-  app.get('/api/voice/status/:callId', async (req, res) => {
+  app.get('/api/voice/status/:callId', requireAuth(), async (req, res) => {
     try {
       const status = await callService.getCallStatus(req.params.callId);
       res.json(status);
@@ -80,7 +82,7 @@ async function startServer() {
   });
 
   // Call Transcript Retrieval (Phase 5A)
-  app.get('/api/voice/transcripts/:callId', async (req, res) => {
+  app.get('/api/voice/transcripts/:callId', requireAuth(), async (req, res) => {
     try {
       const transcript = await supabaseDataService.transcripts.getTranscriptByCallId(req.params.callId);
       if (!transcript) {
@@ -93,7 +95,7 @@ async function startServer() {
   });
 
   // Lead Transcripts Retrieval (Phase 5A)
-  app.get('/api/voice/transcripts/lead/:leadId', async (req, res) => {
+  app.get('/api/voice/transcripts/lead/:leadId', requireAuth(), async (req, res) => {
     try {
       const transcripts = await supabaseDataService.transcripts.getTranscriptsByLeadId(req.params.leadId);
       res.json(transcripts);
@@ -103,7 +105,7 @@ async function startServer() {
   });
 
   // Direct Ingest Transcript Endpoint (Internal/Testing)
-  app.post('/api/voice/transcripts/ingest', async (req, res) => {
+  app.post('/api/voice/transcripts/ingest', requireAuth(), requireRole('SALES', 'ADMIN', 'OWNER'), async (req, res) => {
     try {
       const result = await transcriptIngestionService.ingestTranscript(req.body);
       res.json(result);
@@ -113,7 +115,7 @@ async function startServer() {
   });
 
   // Extract Structured Buyer Intelligence (Phase 5B)
-  app.post('/api/voice/extractions/extract', async (req, res) => {
+  app.post('/api/voice/extractions/extract', requireAuth(), requireRole('SALES', 'ADMIN', 'OWNER'), async (req, res) => {
     try {
       const result = await conversationExtractionService.extractFromTranscript(req.body);
       res.json(result);
@@ -123,7 +125,7 @@ async function startServer() {
   });
 
   // Call Extraction Retrieval (Phase 5B)
-  app.get('/api/voice/extractions/call/:callId', async (req, res) => {
+  app.get('/api/voice/extractions/call/:callId', requireAuth(), async (req, res) => {
     try {
       const extraction = await conversationExtractionService.getExtractionByCallId(req.params.callId);
       if (!extraction) {
@@ -136,7 +138,7 @@ async function startServer() {
   });
 
   // Transcript Extraction Retrieval (Phase 5B)
-  app.get('/api/voice/extractions/transcript/:transcriptId', async (req, res) => {
+  app.get('/api/voice/extractions/transcript/:transcriptId', requireAuth(), async (req, res) => {
     try {
       const extraction = await conversationExtractionService.getExtractionByTranscriptId(req.params.transcriptId);
       if (!extraction) {
@@ -149,7 +151,7 @@ async function startServer() {
   });
 
   // Lead Extractions Retrieval (Phase 5B)
-  app.get('/api/voice/extractions/lead/:leadId', async (req, res) => {
+  app.get('/api/voice/extractions/lead/:leadId', requireAuth(), async (req, res) => {
     try {
       const extractions = await conversationExtractionService.getExtractionsByLeadId(req.params.leadId);
       res.json(extractions);
@@ -159,7 +161,7 @@ async function startServer() {
   });
 
   // Qualify Buyer (Phase 5C)
-  app.post('/api/qualification/qualify', async (req, res) => {
+  app.post('/api/qualification/qualify', requireAuth(), requireRole('SALES', 'ADMIN', 'OWNER'), async (req, res) => {
     try {
       const { extractionId, leadId, forceRequalify, ruleVersion } = req.body;
       if (!extractionId && !leadId) {
@@ -188,7 +190,7 @@ async function startServer() {
   });
 
   // Get Qualification by ID (Phase 5C)
-  app.get('/api/qualification/:id', async (req, res) => {
+  app.get('/api/qualification/:id', requireAuth(), async (req, res) => {
     try {
       const qualification = await supabaseDataService.qualifications.getQualification(req.params.id);
       if (!qualification) {
@@ -201,7 +203,7 @@ async function startServer() {
   });
 
   // Get Qualification by Extraction ID (Phase 5C)
-  app.get('/api/qualification/extraction/:extractionId', async (req, res) => {
+  app.get('/api/qualification/extraction/:extractionId', requireAuth(), async (req, res) => {
     try {
       const qualification = await supabaseDataService.qualifications.getQualificationByExtractionId(
         req.params.extractionId
@@ -216,7 +218,7 @@ async function startServer() {
   });
 
   // Get Qualifications by Lead ID (Phase 5C)
-  app.get('/api/qualification/lead/:leadId', async (req, res) => {
+  app.get('/api/qualification/lead/:leadId', requireAuth(), async (req, res) => {
     try {
       const qualifications = await supabaseDataService.qualifications.getQualificationsByLeadId(
         req.params.leadId
@@ -230,7 +232,7 @@ async function startServer() {
   // --- BUYER SCORING & PRIORITIZATION ENDPOINTS (Phase 5D) ---
 
   // Score Buyer
-  app.post('/api/scoring/score', async (req, res) => {
+  app.post('/api/scoring/score', requireAuth(), requireRole('SALES', 'ADMIN', 'OWNER'), async (req, res) => {
     try {
       const { qualificationId, leadId, forceRescore, ruleVersion } = req.body;
       if (!qualificationId && !leadId) {
@@ -259,7 +261,7 @@ async function startServer() {
   });
 
   // Get Prioritized Dispatch Queue (Phase 5D)
-  app.get('/api/scoring/queue/priority', async (req, res) => {
+  app.get('/api/scoring/queue/priority', requireAuth(), async (req, res) => {
     try {
       const { tier, limit } = req.query;
       const queue = await buyerScoringService.getPriorityQueue({
@@ -273,7 +275,7 @@ async function startServer() {
   });
 
   // Get Score Record by ID (Phase 5D)
-  app.get('/api/scoring/:id', async (req, res) => {
+  app.get('/api/scoring/:id', requireAuth(), async (req, res) => {
     try {
       const score = await supabaseDataService.buyerScores.getBuyerScore(req.params.id);
       if (!score) {
@@ -286,7 +288,7 @@ async function startServer() {
   });
 
   // Get Score Record by Qualification ID (Phase 5D)
-  app.get('/api/scoring/qualification/:qualificationId', async (req, res) => {
+  app.get('/api/scoring/qualification/:qualificationId', requireAuth(), async (req, res) => {
     try {
       const score = await supabaseDataService.buyerScores.getBuyerScoreByQualificationId(
         req.params.qualificationId
@@ -301,7 +303,7 @@ async function startServer() {
   });
 
   // Get Score Records by Lead ID (Phase 5D)
-  app.get('/api/scoring/lead/:leadId', async (req, res) => {
+  app.get('/api/scoring/lead/:leadId', requireAuth(), async (req, res) => {
     try {
       const scores = await supabaseDataService.buyerScores.getBuyerScoresByLeadId(
         req.params.leadId
@@ -315,7 +317,7 @@ async function startServer() {
   // --- PROJECT MATCHING & RECOMMENDATIONS ENDPOINTS (Phase 5E) ---
 
   // Match Buyer Requirements
-  app.post('/api/matching/match', async (req, res) => {
+  app.post('/api/matching/match', requireAuth(), requireRole('SALES', 'ADMIN', 'OWNER'), async (req, res) => {
     try {
       const { leadId, qualificationId, extractionId, forceRematch, ruleVersion, catalogVersion } = req.body;
       if (!leadId) {
@@ -337,7 +339,7 @@ async function startServer() {
   });
 
   // Get Matches for Lead (Phase 5E)
-  app.get('/api/matching/lead/:leadId', async (req, res) => {
+  app.get('/api/matching/lead/:leadId', requireAuth(), async (req, res) => {
     try {
       const recommendations = await projectMatchingService.getMatchesForLead(req.params.leadId);
       res.json(recommendations);
@@ -347,7 +349,7 @@ async function startServer() {
   });
 
   // List Active Project Catalog (Phase 5E)
-  app.get('/api/matching/projects', async (req, res) => {
+  app.get('/api/matching/projects', requireAuth(), async (req, res) => {
     try {
       const { city, status, limit } = req.query;
       const projects = await supabaseDataService.projects.listProjects({
@@ -366,7 +368,7 @@ async function startServer() {
   // ========================================================
 
   // Create or return existing Broker Handoff Package
-  app.post('/api/handoff/create', async (req, res) => {
+  app.post('/api/handoff/create', requireAuth(), requireRole('SALES', 'ADMIN', 'OWNER'), async (req, res) => {
     try {
       const { leadId, qualificationId, scoreId, forceRegenerate, ruleVersion } = req.body;
       if (!leadId) {
@@ -390,7 +392,7 @@ async function startServer() {
   });
 
   // Get Priority Broker Handoff Queue (Deterministically Ordered)
-  app.get('/api/handoff/queue', async (req, res) => {
+  app.get('/api/handoff/queue', requireAuth(), async (req, res) => {
     try {
       const { tier, status, limit } = req.query;
       const queue = await brokerHandoffService.getHandoffQueue({
@@ -405,7 +407,7 @@ async function startServer() {
   });
 
   // Get Broker Handoff by Handoff ID
-  app.get('/api/handoff/:id', async (req, res) => {
+  app.get('/api/handoff/:id', requireAuth(), async (req, res) => {
     try {
       const handoff = await brokerHandoffService.getHandoff(req.params.id);
       if (!handoff) {
@@ -418,7 +420,7 @@ async function startServer() {
   });
 
   // Get Broker Handoffs for a Lead
-  app.get('/api/handoff/lead/:leadId', async (req, res) => {
+  app.get('/api/handoff/lead/:leadId', requireAuth(), async (req, res) => {
     try {
       const handoffs = await supabaseDataService.brokerHandoffs.getHandoffsByLeadId(req.params.leadId);
       res.json(handoffs);
@@ -428,7 +430,7 @@ async function startServer() {
   });
 
   // Dispatch Broker Handoff (Mock / Dry-Run Safe by Default)
-  app.post('/api/handoff/:id/dispatch', async (req, res) => {
+  app.post('/api/handoff/:id/dispatch', requireAuth(), requireRole('SALES', 'ADMIN', 'OWNER'), async (req, res) => {
     try {
       const { channel, dryRun = true, forceRedispatch } = req.body;
       const result = await brokerHandoffService.dispatchHandoff(req.params.id, {
@@ -443,7 +445,7 @@ async function startServer() {
   });
 
   // Acknowledge Broker Handoff Receipt
-  app.post('/api/handoff/:id/acknowledge', async (req, res) => {
+  app.post('/api/handoff/:id/acknowledge', requireAuth(), requireRole('SALES', 'ADMIN', 'OWNER'), async (req, res) => {
     try {
       const { acknowledgedBy, notes } = req.body;
       const updated = await brokerHandoffService.acknowledgeHandoff(req.params.id, {
@@ -457,7 +459,7 @@ async function startServer() {
   });
 
   // Scout Public Enrichment Endpoint
-  app.post('/api/enrich', async (req, res) => {
+  app.post('/api/enrich', requireAuth(), requireRole('SALES', 'ADMIN', 'OWNER'), async (req, res) => {
     try {
       const { leadId, identifiers } = req.body;
       if (!leadId) {
@@ -469,6 +471,13 @@ async function startServer() {
       res.status(500).json({ error: err instanceof Error ? err.message : 'Enrichment failed' });
     }
   });
+
+  return app;
+}
+
+export async function startServer() {
+  const app = createApp();
+  const PORT = 3000;
 
   // --- VITE MIDDLEWARE / STATIC ASSETS ---
 
@@ -491,4 +500,12 @@ async function startServer() {
   });
 }
 
-startServer();
+// Only start the server directly if executed as main entrypoint
+const isDirectEntry = Boolean(
+  process.argv[1] &&
+  (process.argv[1].endsWith('server.ts') || process.argv[1].endsWith('server.cjs') || process.argv[1].endsWith('server.js'))
+);
+
+if (isDirectEntry && process.env.NODE_ENV !== 'test') {
+  startServer();
+}

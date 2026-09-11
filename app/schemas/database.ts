@@ -7,6 +7,7 @@
 
 export interface Lead {
   id: string; // UUID
+  tenant_id?: string; // UUID FK -> tenants.id
   lead_id: string; // TEXT UNIQUE (e.g. GF-2026-000001)
   name: string | null;
   phone: string | null;
@@ -20,6 +21,7 @@ export interface Lead {
 
 export interface LeadEnrichment {
   id: string; // UUID
+  tenant_id?: string; // UUID FK -> tenants.id
   lead_id: string; // UUID FK -> leads.id
   platform: string | null;
   username: string | null;
@@ -37,6 +39,7 @@ export interface LeadEnrichment {
 
 export interface Call {
   id: string; // UUID
+  tenant_id?: string; // UUID FK -> tenants.id
   lead_id: string; // UUID FK -> leads.id
   provider: string | null;
   provider_call_id: string | null;
@@ -54,6 +57,7 @@ export interface Call {
 
 export interface BuyerProfile {
   id: string; // UUID
+  tenant_id?: string; // UUID FK -> tenants.id
   lead_id: string; // UUID UNIQUE FK -> leads.id
   property_interest: boolean | null;
   property_type: string | null;
@@ -77,6 +81,7 @@ export interface BuyerProfile {
 
 export interface BuyerPreference {
   id: string; // UUID
+  tenant_id?: string; // UUID FK -> tenants.id
   lead_id: string; // UUID FK -> leads.id
   attribute: string;
   value: unknown;
@@ -89,6 +94,7 @@ export interface BuyerPreference {
 
 export interface DbProject {
   id: string; // UUID
+  tenant_id?: string; // UUID FK -> tenants.id
   project_code: string; // TEXT UNIQUE
   project_name: string;
   developer_name: string | null;
@@ -111,6 +117,7 @@ export interface DbProject {
 
 export interface DbProjectMatch {
   id: string; // UUID
+  tenant_id?: string; // UUID FK -> tenants.id
   lead_id: string; // UUID FK -> leads.id
   project_id: string; // UUID FK -> projects.id
   match_score: number | null;
@@ -131,6 +138,7 @@ export type ProjectMatchRow = DbProjectMatch;
 
 export interface BuyerScore {
   id: string; // UUID
+  tenant_id?: string; // UUID FK -> tenants.id
   lead_id: string; // UUID FK -> leads.id
   intent_score: number | null;
   budget_score: number | null;
@@ -146,6 +154,7 @@ export interface BuyerScore {
 
 export interface LeadEvent {
   id: string; // UUID
+  tenant_id?: string; // UUID FK -> tenants.id
   lead_id: string; // UUID FK -> leads.id
   event_type: string;
   event_data: Record<string, unknown> | null;
@@ -161,6 +170,7 @@ export interface TranscriptTurn {
 
 export interface CallTranscript {
   id: string; // UUID
+  tenant_id?: string; // UUID FK -> tenants.id
   lead_id: string; // UUID FK -> leads.id
   call_id: string; // UUID FK -> calls.id
   provider_call_id: string | null;

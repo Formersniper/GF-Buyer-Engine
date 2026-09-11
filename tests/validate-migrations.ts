@@ -223,7 +223,71 @@ function runValidation() {
     }
   }
   console.log('✅ buyer_scores contains both legacy and Phase 5D columns.');
-  console.log('🎉 SUPABASE MIGRATION CHAIN VALIDATION PASSED!');
+
+  // ==========================================
+  // Phase 8A.2 Tenant / Membership Model Invariant Checks
+  // ==========================================
+  console.log('\n--- Phase 8A.2 Tenant Model Invariant Checks ---');
+
+  // 1. Verify Core Tenant Tables
+  const requiredTenantTables = ['tenants', 'tenant_memberships', 'tenant_api_keys', 'webhook_events'];
+  for (const tName of requiredTenantTables) {
+    const t = tables.get(tName);
+    if (!t) throw new Error(`Missing required Phase 8A.2 table: "${tName}"`);
+    console.log(`  ✓ Table "${tName}" present with ${t.columns.size} columns`);
+  }
+
+  // 2. Verify tenant_id in all 13 application tables
+  const appTablesWithTenantId = [
+    'leads',
+    'lead_enrichment',
+    'calls',
+    'buyer_profiles',
+    'buyer_preferences',
+    'projects',
+    'project_matches',
+    'buyer_scores',
+    'lead_events',
+    'call_transcripts',
+    'conversation_extractions',
+    'buyer_qualifications',
+    'broker_handoffs',
+  ];
+
+  for (const tName of appTablesWithTenantId) {
+    const t = tables.get(tName);
+    if (!t) throw new Error(`Application table "${tName}" not found`);
+    if (!t.columns.has('tenant_id')) {
+      throw new Error(`Table "${tName}" is missing required tenant_id column`);
+    }
+    const tenantIdxName = `idx_${tName}_tenant_id`;
+    if (!t.indexes.has(tenantIdxName)) {
+      throw new Error(`Table "${tName}" is missing required tenant index "${tenantIdxName}"`);
+    }
+    console.log(`  ✓ Table "${tName}" has tenant_id and index "${tenantIdxName}"`);
+  }
+
+  // 3. Verify tenant_api_keys security invariant (no plaintext key stored)
+  const apiKeysTable = tables.get('tenant_api_keys')!;
+  if (!apiKeysTable.columns.has('key_hash')) {
+    throw new Error('tenant_api_keys table missing "key_hash" column');
+  }
+  if (apiKeysTable.columns.has('key') || apiKeysTable.columns.has('api_key') || apiKeysTable.columns.has('plaintext_key')) {
+    throw new Error('SECURITY VIOLATION: tenant_api_keys must NOT store plaintext keys');
+  }
+  console.log('  ✓ tenant_api_keys enforces key hashing only (no plaintext keys)');
+
+  // 4. Verify webhook_events primary key and fields
+  const webhookTable = tables.get('webhook_events')!;
+  const webhookCols = ['event_id', 'provider', 'received_at', 'status', 'payload_hash', 'processed_at'];
+  for (const col of webhookCols) {
+    if (!webhookTable.columns.has(col)) {
+      throw new Error(`webhook_events is missing expected column "${col}"`);
+    }
+  }
+  console.log('  ✓ webhook_events contains all required idempotency and audit fields');
+
+  console.log('🎉 SUPABASE MIGRATION CHAIN & 8A.2 TENANT MODEL VALIDATION PASSED!');
 }
 
 runValidation();

@@ -147,6 +147,7 @@ export interface BrokerHandoffPackage {
 
 export interface DbBrokerHandoff {
   id: string; // UUID
+  tenant_id?: string; // UUID FK -> tenants.id
   lead_id: string; // UUID FK -> leads.id
   qualification_id: string | null;
   score_id: string | null;

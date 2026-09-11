@@ -78,6 +78,7 @@ export interface EvidenceRef {
 
 export interface BuyerQualification {
   id: string; // UUID
+  tenant_id?: string; // UUID FK -> tenants.id
   lead_id: string; // UUID FK -> leads.id
   extraction_id: string; // UUID FK -> conversation_extractions.id
   qualification_status: BuyerQualificationStatus;
