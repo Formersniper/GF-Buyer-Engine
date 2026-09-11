@@ -9,9 +9,11 @@
  * - Updates Supabase `calls` table and lead workflow state.
  */
 
+import crypto from 'crypto';
 import { supabaseDataService } from '../supabase/repositories';
 import { WorkflowStatus } from '../../schemas/workflow';
 import { transcriptIngestionService } from './transcriptIngestionService';
+import { WebhookEvent } from '../../schemas/tenant';
 
 export interface SarvamWebhookEventPayload {
   event_id?: string;
@@ -53,9 +55,6 @@ export interface WebhookProcessingOutput {
   error?: string;
 }
 
-// In-memory set for tracking processed event IDs to prevent duplicate webhook delivery execution
-const processedEventIds = new Set<string>();
-
 /**
  * Handles incoming Sarvam webhook callbacks.
  */
@@ -65,29 +64,62 @@ export async function processSarvamWebhook(
 ): Promise<WebhookProcessingOutput> {
   // 1. Verify webhook authorization / secret if configured
   const webhookSecret = process.env.VOICE_WEBHOOK_SECRET;
-  if (webhookSecret && headers) {
+  const isProduction = process.env.NODE_ENV === 'production';
+
+  if (!webhookSecret) {
+    if (isProduction) {
+      return { success: false, action: 'ERROR', error: 'Unauthorized' };
+    }
+  } else if (headers) {
     const authHeader = headers['authorization'] || headers['x-sarvam-signature'] || headers['x-webhook-secret'];
     const authValue = Array.isArray(authHeader) ? authHeader[0] : authHeader;
+    
+    if (!authValue) {
+      return { success: false, action: 'ERROR', error: 'Unauthorized' };
+    }
 
-    if (authValue && !authValue.includes(webhookSecret)) {
-      return {
-        success: false,
-        action: 'ERROR',
-        error: 'Unauthorized webhook signature/secret.',
-      };
+    const token = authValue.startsWith('Bearer ') ? authValue.slice(7).trim() : authValue.trim();
+    if (token.length !== webhookSecret.length) {
+      return { success: false, action: 'ERROR', error: 'Unauthorized' };
+    }
+
+    const isMatch = crypto.timingSafeEqual(Buffer.from(token), Buffer.from(webhookSecret));
+    if (!isMatch) {
+      return { success: false, action: 'ERROR', error: 'Unauthorized' };
     }
   }
 
-  // 2. Extract Event ID and enforce idempotency
-  const eventId = payload.event_id || `${payload.call_id || payload.outbound_id || payload.id}-${payload.status || payload.event_type}`;
-  if (eventId && processedEventIds.has(eventId)) {
-    return {
-      success: true,
-      action: 'IGNORED_DUPLICATE',
+  // 2. Extract Event ID and enforce idempotency via DB
+  const rawStatus = (payload.status || payload.event_type || payload.type || '').toLowerCase();
+  const eventId = payload.event_id || `${payload.call_id || payload.outbound_id || payload.id}-${rawStatus}`;
+  
+  if (eventId) {
+    const existingEvent = await supabaseDataService.webhookEvents.getEvent(eventId);
+    if (existingEvent) {
+      return { success: true, action: 'IGNORED_DUPLICATE' };
+    }
+    
+    const newEvent: WebhookEvent = {
+      event_id: eventId,
+      provider: 'sarvam',
+      received_at: new Date().toISOString(),
+      status: 'PENDING',
+      payload_hash: null,
+      processed_at: null
     };
+
+    try {
+      await supabaseDataService.webhookEvents.recordEvent(newEvent);
+    } catch (err: unknown) {
+      // If a concurrent request already inserted this event_id, treat as duplicate
+      if (err instanceof Error && err.message.includes('Duplicate webhook event')) {
+         return { success: true, action: 'IGNORED_DUPLICATE' };
+      }
+      throw err;
+    }
   }
 
-  // 3. Resolve external call ID and fallback lead ID
+  // 3. Resolve external call ID. DO NOT fallback to guessing via leadId's latest call
   const externalCallId =
     payload.outbound_id ||
     payload.call_id ||
@@ -97,38 +129,25 @@ export async function processSarvamWebhook(
     (payload.variables?.call_id as string) ||
     (payload.variables?.attempt_id as string);
 
-  const fallbackLeadId =
-    payload.metadata?.lead_id ||
-    payload.lead_id ||
-    (payload.agent_variables?.lead_id as string) ||
-    (payload.app_config?.agent_variables?.lead_id as string) ||
-    (payload.variables?.lead_id as string);
-
-  if (!externalCallId && !fallbackLeadId) {
+  if (!externalCallId) {
     return {
       success: false,
       action: 'ERROR',
-      error: 'Webhook payload missing call identifier (outbound_id / call_id) or lead_id metadata.',
+      error: 'Webhook payload missing authoritative provider call identifier',
     };
   }
 
   // 4. Find internal call record in Supabase
-  let dbCall = externalCallId ? await supabaseDataService.calls.getCallByProviderCallId(externalCallId) : null;
-  if (!dbCall && externalCallId) {
+  let dbCall = await supabaseDataService.calls.getCallByProviderCallId(externalCallId);
+  if (!dbCall) {
     dbCall = await supabaseDataService.calls.getCall(externalCallId);
-  }
-  if (!dbCall && fallbackLeadId) {
-    const leadCalls = await supabaseDataService.calls.getCallsByLead(fallbackLeadId);
-    if (leadCalls && leadCalls.length > 0) {
-      dbCall = leadCalls[leadCalls.length - 1];
-    }
   }
 
   if (!dbCall) {
     return {
       success: false,
       action: 'CALL_NOT_FOUND',
-      error: `No matching call record found for external ID ${externalCallId || 'N/A'} (lead ID ${fallbackLeadId || 'N/A'})`,
+      error: 'No matching call record found for authoritative identifier',
     };
   }
 
@@ -139,7 +158,6 @@ export async function processSarvamWebhook(
     currentCallStatus === 'NO_ANSWER';
 
   // 5. Determine new status and mapped event type
-  const rawStatus = (payload.status || payload.event_type || payload.type || '').toLowerCase();
   let mappedCallStatus = 'CALLING';
   let mappedWorkflowStatus: WorkflowStatus = 'CALLING';
   let leadEventType: string | null = null;
@@ -186,8 +204,11 @@ export async function processSarvamWebhook(
     leadEventType = 'CALL_FAILED';
   }
 
-  // Idempotency: Ignore non-terminal updates if call is already terminal
+  // Idempotency / Ordering: Ignore non-terminal updates if call is already terminal
   if (isAlreadyTerminal && mappedCallStatus !== 'COMPLETED' && mappedCallStatus !== 'CALL_FAILED' && mappedCallStatus !== 'NO_ANSWER') {
+    if (eventId) {
+      await supabaseDataService.webhookEvents.updateEventStatus(eventId, 'IGNORED_STALE');
+    }
     return {
       success: true,
       action: 'IGNORED_DUPLICATE',
@@ -227,7 +248,7 @@ export async function processSarvamWebhook(
     try {
       await transcriptIngestionService.ingestSarvamTranscript(payload);
     } catch (ingestErr) {
-      console.error('[Transcript Ingestion Error] Failed to ingest transcript from webhook payload:', ingestErr);
+      console.error('[Transcript Ingestion Error] Failed to ingest transcript from webhook payload');
     }
   }
 
@@ -248,7 +269,7 @@ export async function processSarvamWebhook(
   }
 
   if (eventId) {
-    processedEventIds.add(eventId);
+    await supabaseDataService.webhookEvents.updateEventStatus(eventId, 'COMPLETED');
   }
 
   return {

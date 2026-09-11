@@ -87,12 +87,13 @@ export class SarvamClient {
       this.baseUrl = rawBase;
     }
 
-    this.orgId = config?.orgId !== undefined ? config.orgId : (process.env.SARVAM_ORG_ID || '01a074ea-647b-7549-9a87-cb4a09a65faa');
-    this.workspaceId = config?.workspaceId !== undefined ? config.workspaceId : (process.env.SARVAM_WORKSPACE_ID || '01a074ea-6481-766d-a3f3-c42aef343735');
-    this.agentId = config?.agentId !== undefined ? config.agentId : (process.env.SARVAM_AGENT_ID || 'Growthforge-ae0789e1-56b8');
-    this.agentVersion = config?.agentVersion !== undefined ? config.agentVersion : (process.env.SARVAM_AGENT_VERSION || '2');
-    this.connectionId = config?.connectionId !== undefined ? config.connectionId : (process.env.SARVAM_CONNECTION_ID || '0174b928-7c-cdaf00f5-ff9a');
-    this.agentPhoneNumber = config?.agentPhoneNumber !== undefined ? config.agentPhoneNumber : (process.env.SARVAM_AGENT_PHONE_NUMBER || '+918064266255');
+    const isProd = process.env.NODE_ENV === 'production';
+    this.orgId = config?.orgId !== undefined ? config.orgId : (process.env.SARVAM_ORG_ID || (isProd ? '' : '01a074ea-647b-7549-9a87-cb4a09a65faa'));
+    this.workspaceId = config?.workspaceId !== undefined ? config.workspaceId : (process.env.SARVAM_WORKSPACE_ID || (isProd ? '' : '01a074ea-6481-766d-a3f3-c42aef343735'));
+    this.agentId = config?.agentId !== undefined ? config.agentId : (process.env.SARVAM_AGENT_ID || (isProd ? '' : 'Growthforge-ae0789e1-56b8'));
+    this.agentVersion = config?.agentVersion !== undefined ? config.agentVersion : (process.env.SARVAM_AGENT_VERSION || (isProd ? '' : '2'));
+    this.connectionId = config?.connectionId !== undefined ? config.connectionId : (process.env.SARVAM_CONNECTION_ID || (isProd ? '' : '0174b928-7c-cdaf00f5-ff9a'));
+    this.agentPhoneNumber = config?.agentPhoneNumber !== undefined ? config.agentPhoneNumber : (process.env.SARVAM_AGENT_PHONE_NUMBER || (isProd ? '' : '+918064266255'));
     this.timeoutMs = config?.timeoutMs || 15000;
   }
 
@@ -105,6 +106,14 @@ export class SarvamClient {
         SarvamErrorCode.CONFIG_ERROR,
         'SARVAM_API_KEY is not configured on the server environment.'
       );
+    }
+    if (process.env.NODE_ENV === 'production') {
+      if (!this.orgId || !this.workspaceId || !this.agentId || !this.connectionId || !this.agentPhoneNumber) {
+        throw new SarvamError(
+          SarvamErrorCode.CONFIG_ERROR,
+          'Missing required Sarvam configuration in production environment. Ensure org, workspace, agent, connection, and phone are configured.'
+        );
+      }
     }
   }
 

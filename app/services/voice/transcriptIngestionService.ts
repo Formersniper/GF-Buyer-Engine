@@ -156,19 +156,13 @@ export class TranscriptIngestionService {
     if (!dbCall && directCallId) {
       dbCall = await supabaseDataService.calls.getCall(directCallId);
     }
-    if (!dbCall && fallbackLeadId) {
-      const leadCalls = await supabaseDataService.calls.getCallsByLead(fallbackLeadId);
-      if (leadCalls && leadCalls.length > 0) {
-        dbCall = leadCalls[leadCalls.length - 1];
-      }
-    }
 
     if (!dbCall) {
       // Correlation failed: do not guess or attach to arbitrary lead
       return {
         success: false,
         action: 'TRANSCRIPT_CORRELATION_FAILED',
-        error: `Could not correlate transcript to an existing call. (provider_call_id: ${providerCallId || 'N/A'}, call_id: ${directCallId || 'N/A'}, lead_id: ${fallbackLeadId || 'N/A'})`,
+        error: `Could not correlate transcript to an existing call. (provider_call_id: ${providerCallId || 'N/A'}, call_id: ${directCallId || 'N/A'})`,
       };
     }
 

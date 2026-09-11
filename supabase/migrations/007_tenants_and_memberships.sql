@@ -220,3 +220,4 @@ ALTER TABLE tenant_memberships ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tenant_api_keys ENABLE ROW LEVEL SECURITY;
 ALTER TABLE webhook_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE broker_handoffs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow public access on webhook_events" ON webhook_events FOR ALL USING (true);

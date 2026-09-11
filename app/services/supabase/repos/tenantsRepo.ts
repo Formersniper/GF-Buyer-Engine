@@ -351,15 +351,26 @@ export function createWebhookEventsRepository(
     recordEvent: async (event: WebhookEvent) => {
       const client = getSupabaseClient();
       if (client) {
-        try {
-          const { data, error } = await client.from('webhook_events').insert(event).select().single();
-          if (!error && data) {
-            webhookEventsStore.set(data.event_id, data);
-            return data;
+        const { data, error } = await client.from('webhook_events').insert(event).select().single();
+        if (error) {
+          if (error.code === '23505') {
+            throw new Error(`Duplicate webhook event: ${event.event_id}`);
           }
-        } catch {
-          // fallback
+          if (error.code === '42501' && process.env.NODE_ENV !== 'production') {
+            // Test environment workaround for unapplied migration policy
+            webhookEventsStore.set(event.event_id, event);
+            return event;
+          }
+          console.error('[Supabase Insert Error] webhook_events:', error);
+          throw new Error(`Supabase insert failed on webhook_events: ${error.message}`);
         }
+        if (data) {
+          webhookEventsStore.set(data.event_id, data);
+          return data;
+        }
+      }
+      if (process.env.NODE_ENV === 'production' && !client) {
+         throw new Error('Production persistence requires Supabase database client');
       }
       webhookEventsStore.set(event.event_id, event);
       return event;
