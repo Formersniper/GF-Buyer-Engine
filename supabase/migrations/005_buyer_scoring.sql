@@ -1,15 +1,16 @@
 -- GrowthForge Buyer Intelligence Engine
 -- Migration: 005_buyer_scoring.sql
--- Description: Creates the buyer_scores table, indexes, constraints, updated_at trigger, and RLS policies for Phase 5D Buyer Scoring & Prioritization
+-- Description: Creates / enhances the buyer_scores table, indexes, constraints, updated_at trigger, and RLS policies for Phase 5D Buyer Scoring & Prioritization
 
+-- 1. Create table if not exists (in case it wasn't created in 001)
 CREATE TABLE IF NOT EXISTS buyer_scores (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     lead_id UUID NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
     qualification_id UUID REFERENCES buyer_qualifications(id) ON DELETE CASCADE,
     extraction_id UUID REFERENCES conversation_extractions(id) ON DELETE CASCADE,
-    composite_score NUMERIC(5, 2) NOT NULL,
+    composite_score NUMERIC(5, 2),
     scoring_confidence NUMERIC(4, 3) NOT NULL DEFAULT 0.850,
-    tier TEXT NOT NULL,
+    tier TEXT,
     dimension_scores JSONB NOT NULL DEFAULT '{}'::jsonb,
     breakdown JSONB NOT NULL DEFAULT '[]'::jsonb,
     key_drivers JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -18,12 +19,35 @@ CREATE TABLE IF NOT EXISTS buyer_scores (
     scoring_version TEXT NOT NULL DEFAULT '1.0',
     rule_version TEXT NOT NULL DEFAULT '1.0',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT uq_buyer_scores_unique UNIQUE (qualification_id, rule_version)
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- 2. Ensure all Phase 5D columns exist (for existing buyer_scores table created in 001)
 ALTER TABLE buyer_scores
-    ADD COLUMN IF NOT EXISTS qualification_id UUID;
+    ADD COLUMN IF NOT EXISTS qualification_id UUID REFERENCES buyer_qualifications(id) ON DELETE CASCADE,
+    ADD COLUMN IF NOT EXISTS extraction_id UUID REFERENCES conversation_extractions(id) ON DELETE CASCADE,
+    ADD COLUMN IF NOT EXISTS composite_score NUMERIC(5, 2),
+    ADD COLUMN IF NOT EXISTS scoring_confidence NUMERIC(4, 3) DEFAULT 0.850,
+    ADD COLUMN IF NOT EXISTS tier TEXT,
+    ADD COLUMN IF NOT EXISTS dimension_scores JSONB DEFAULT '{}'::jsonb,
+    ADD COLUMN IF NOT EXISTS breakdown JSONB DEFAULT '[]'::jsonb,
+    ADD COLUMN IF NOT EXISTS key_drivers JSONB DEFAULT '[]'::jsonb,
+    ADD COLUMN IF NOT EXISTS risk_factors JSONB DEFAULT '[]'::jsonb,
+    ADD COLUMN IF NOT EXISTS sla_dispatch JSONB DEFAULT '{}'::jsonb,
+    ADD COLUMN IF NOT EXISTS scoring_version TEXT DEFAULT '1.0',
+    ADD COLUMN IF NOT EXISTS rule_version TEXT DEFAULT '1.0',
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+
+-- 3. Ensure unique constraint exists
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'uq_buyer_scores_unique'
+    ) THEN
+        ALTER TABLE buyer_scores
+            ADD CONSTRAINT uq_buyer_scores_unique UNIQUE (qualification_id, rule_version);
+    END IF;
+END $$;
 
 -- ==========================================
 -- INDEXES
