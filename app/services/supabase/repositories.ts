@@ -1760,9 +1760,9 @@ class SupabaseDataService {
           ? `${primaryReq.property_type || 'Residential'} ${primaryReq.configuration || ''} in ${(primaryReq.preferred_locations || []).join(', ')}`.trim()
           : 'Property requirement';
 
-        const deadline = new Date(h.sla_deadline).getTime();
+        const deadline = h.sla_deadline ? new Date(h.sla_deadline).getTime() : NaN;
         const nowMs = Date.now();
-        const minsRemaining = Math.round((deadline - nowMs) / 60000);
+        const minsRemaining = isNaN(deadline) ? 0 : Math.round((deadline - nowMs) / 60000);
 
         queueItems.push({
           handoff_id: h.id,
@@ -1772,7 +1772,7 @@ class SupabaseDataService {
           phone: lead?.phone || payload?.primary_buyer_summary?.phone || '',
           score: payload?.priority?.score ?? 0,
           tier: h.priority_tier,
-          sla_deadline: h.sla_deadline,
+          sla_deadline: h.sla_deadline || new Date().toISOString(),
           sla_minutes_remaining: minsRemaining,
           assigned_role: h.assigned_role || 'INBOUND_SALES_SPECIALIST',
           assigned_team: h.assigned_team || 'INBOUND_SALES',
@@ -1793,9 +1793,11 @@ class SupabaseDataService {
         const rankA = tierRank(a.tier);
         const rankB = tierRank(b.tier);
         if (rankA !== rankB) return rankA - rankB;
-        const deadlineA = new Date(a.sla_deadline).getTime();
-        const deadlineB = new Date(b.sla_deadline).getTime();
-        if (deadlineA !== deadlineB) return deadlineA - deadlineB;
+        const deadlineA = a.sla_deadline ? new Date(a.sla_deadline).getTime() : 0;
+        const deadlineB = b.sla_deadline ? new Date(b.sla_deadline).getTime() : 0;
+        const safeDeadA = isNaN(deadlineA) ? 0 : deadlineA;
+        const safeDeadB = isNaN(deadlineB) ? 0 : deadlineB;
+        if (safeDeadA !== safeDeadB) return safeDeadA - safeDeadB;
         if (b.score !== a.score) return b.score - a.score;
         return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
       });

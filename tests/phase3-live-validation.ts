@@ -6,6 +6,9 @@
 import { existsSync, readFileSync } from 'fs';
 import { resolve } from 'path';
 import { execSync } from 'child_process';
+
+process.env.PYTHONDONTWRITEBYTECODE = '1';
+
 import { scoutAdapter } from '../app/services/scout/scoutAdapter';
 import { supabaseDataService } from '../app/services/supabase/repositories';
 import { getSupabaseClient } from '../app/services/supabase/client';
@@ -48,9 +51,9 @@ async function runControlledLiveValidation() {
   // ---------------------------------------------------------------------------
   console.log('--- Step 3: Verifying Scout Subsystem Files ---');
   const expectedFiles = [
-    '/scout/scout.py',
-    '/scout/requirements.txt',
-    '/scout/app/__init__.py',
+    resolve(process.cwd(), 'scout/scout.py'),
+    resolve(process.cwd(), 'scout/requirements.txt'),
+    resolve(process.cwd(), 'scout/app/__init__.py'),
   ];
   for (const f of expectedFiles) {
     const exists = existsSync(f);

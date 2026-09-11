@@ -49,7 +49,7 @@ export class CRMRouter {
     const tier = scoreRecord.tier;
     const slaDispatch = scoreRecord.sla_dispatch;
 
-    if (slaDispatch) {
+    if (slaDispatch && slaDispatch.assigned_role && typeof slaDispatch.sla_minutes === 'number') {
       let assigned_team: CRMRoutingDecision['assigned_team'] = 'INBOUND_SALES';
       if (slaDispatch.assigned_role === 'SENIOR_SALES_ADVISOR') {
         assigned_team = 'SENIOR_SALES';
