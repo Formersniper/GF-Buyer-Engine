@@ -9,12 +9,12 @@ import { costAndConcurrencyControl, ConcurrencyError } from '../app/services/sec
 let passed = 0;
 let failed = 0;
 
-function assert(condition: boolean, testName: string, detail?: string) {
+function assert(condition: boolean, testName: string, detail?: any) {
   if (condition) {
     console.log(`  ✅ PASS: ${testName}`);
     passed++;
   } else {
-    console.error(`  ❌ FAIL: ${testName}${detail ? ` -> ${detail}` : ''}`);
+    console.error(`  ❌ FAIL: ${testName}`, detail || '');
     failed++;
   }
 }
@@ -24,16 +24,18 @@ async function runConcurrencySuite() {
   console.log('GROWTHFORGE SECURITY — PHASE 8A.8 CONCURRENCY VERIFICATION');
   console.log('============================================================\n');
 
+  const validUuidTenant = '12345678-1234-1234-1234-123456789012';
+
   // Test 1: Resource locking prevents concurrent duplicate enrichment
   try {
     const leadId = `lead-lock-${Date.now()}`;
-    const locked1 = await supabaseDataService.security.acquireResourceLock('enrichment', leadId, 'tenant-1', 'worker-A', 60);
-    const locked2 = await supabaseDataService.security.acquireResourceLock('enrichment', leadId, 'tenant-1', 'worker-B', 60);
+    const locked1 = await supabaseDataService.security.acquireResourceLock('enrichment', leadId, validUuidTenant, 'worker-A', 60);
+    const locked2 = await supabaseDataService.security.acquireResourceLock('enrichment', leadId, validUuidTenant, 'worker-B', 60);
 
-    assert(locked1 === true && locked2 === false, '1. Resource locking prevents concurrent duplicate processing for same resource');
+    assert(locked1 === true && locked2 === false, '1. Resource locking prevents concurrent duplicate processing for same resource', { locked1, locked2 });
     await supabaseDataService.security.releaseResourceLock('enrichment', leadId, 'worker-A');
-  } catch (err: unknown) {
-    assert(false, '1. Resource locking prevents concurrent duplicate processing', err instanceof Error ? err.message : String(err));
+  } catch (err: any) {
+    assert(false, '1. Resource locking prevents concurrent duplicate processing', err?.stack || err);
   }
 
   // Test 2: Idempotency dispatch protection (`withSarvamDispatchConcurrency`)
@@ -47,25 +49,25 @@ async function runConcurrencySuite() {
       return { callId: `call-${callCount}`, status: 'DISPATCHED' };
     };
 
-    const res1 = await costAndConcurrencyControl.withSarvamDispatchConcurrency(leadId, 'tenant-1', key, fn);
-    const res2 = await costAndConcurrencyControl.withSarvamDispatchConcurrency(leadId, 'tenant-1', key, fn);
+    const res1 = await costAndConcurrencyControl.withSarvamDispatchConcurrency(leadId, validUuidTenant, key, fn);
+    const res2 = await costAndConcurrencyControl.withSarvamDispatchConcurrency(leadId, validUuidTenant, key, fn);
 
-    assert(res1.cached === false && res2.cached === true && callCount === 1, '2. Sarvam duplicate call protection ensures exactly one billable dispatch');
-  } catch (err: unknown) {
-    assert(false, '2. Sarvam duplicate call protection', err instanceof Error ? err.message : String(err));
+    assert(res1.cached === false && res2.cached === true && callCount === 1, '2. Sarvam duplicate call protection ensures exactly one billable dispatch', { res1, res2, callCount });
+  } catch (err: any) {
+    assert(false, '2. Sarvam duplicate call protection', err?.stack || err);
   }
 
   // Test 3: Scout concurrency wrapper (`withScoutConcurrency`)
   try {
     const leadId = `lead-scout-${Date.now()}`;
     let executed = false;
-    await costAndConcurrencyControl.withScoutConcurrency(leadId, 'tenant-1', async () => {
+    await costAndConcurrencyControl.withScoutConcurrency(leadId, validUuidTenant, async () => {
       executed = true;
       return 'enriched';
     });
     assert(Boolean(executed), '3. Scout concurrency wrapper executes successfully');
-  } catch (err: unknown) {
-    assert(false, '3. Scout concurrency wrapper', err instanceof Error ? err.message : String(err));
+  } catch (err: any) {
+    assert(false, '3. Scout concurrency wrapper', err?.stack || err);
   }
 
   console.log('\n------------------------------------------------------------');

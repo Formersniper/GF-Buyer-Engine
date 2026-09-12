@@ -93,7 +93,7 @@ export function createSecurityRepository(
         .single();
         
       if (error) {
-        if (error.code === 'PGRST205') { // table does not exist
+        if (error.code === 'PGRST205' || error.code === '42501') { // table does not exist or RLS violation
           const combinedKey = `${tenantId || 'global'}:${key}`;
           const existing = idempotencyStore.get(combinedKey);
           if (existing) return existing as IdempotencyRecord;
@@ -160,7 +160,7 @@ export function createSecurityRepository(
       else query = query.is('tenant_id', null);
       
       const { error } = await query;
-      if (error && error.code === 'PGRST205') {
+      if (error && (error.code === 'PGRST205' || error.code === '42501')) {
         const combinedKey = `${tenantId || 'global'}:${key}`;
         const existing = idempotencyStore.get(combinedKey);
         if (existing) {
@@ -200,7 +200,7 @@ export function createSecurityRepository(
       else query = query.is('tenant_id', null);
       
       const { error } = await query;
-      if (error && error.code === 'PGRST205') {
+      if (error && (error.code === 'PGRST205' || error.code === '42501')) {
         const combinedKey = `${tenantId || 'global'}:${key}`;
         const existing = idempotencyStore.get(combinedKey);
         if (existing) {
@@ -245,7 +245,7 @@ export function createSecurityRepository(
         .eq('resource_id', resourceId)
         .lt('expires_at', new Date().toISOString());
       
-      if (del.error && del.error.code === 'PGRST205') {
+      if (del.error && (del.error.code === 'PGRST205' || del.error.code === '42501')) {
         const key = `${resourceType}:${resourceId}`;
         const existing = locksStore.get(key);
         const now = Date.now();
@@ -268,6 +268,12 @@ export function createSecurityRepository(
         });
         
       if (error) {
+        if (error.code === '42501') {
+          const key = `${resourceType}:${resourceId}`;
+          const now = Date.now();
+          locksStore.set(key, { locked_by: lockedBy, expires_at: now + ttlSeconds * 1000 });
+          return true;
+        }
         if (error.code === '23505') {
           // Check if we already own it
           const { data } = await client
@@ -304,7 +310,7 @@ export function createSecurityRepository(
         .eq('resource_type', resourceType)
         .eq('resource_id', resourceId)
         .eq('locked_by', lockedBy);
-      if (res.error && res.error.code === 'PGRST205') {
+      if (res.error && (res.error.code === 'PGRST205' || res.error.code === '42501')) {
         locksStore.delete(`${resourceType}:${resourceId}`);
       }
     },

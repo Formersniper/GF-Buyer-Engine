@@ -52,8 +52,9 @@ async function runCostControlsSuite() {
       return { status: 'OK', dispatchId: dispatches };
     };
 
+    const validUuidTenant = '12345678-1234-1234-1234-123456789012';
     const promises = Array.from({ length: 100 }, () =>
-      costAndConcurrencyControl.withSarvamDispatchConcurrency(leadId, 'tenant-stress', key, fn)
+      costAndConcurrencyControl.withSarvamDispatchConcurrency(leadId, validUuidTenant, key, fn)
     );
 
     const results = await Promise.all(promises);
