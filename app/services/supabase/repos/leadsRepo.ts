@@ -13,6 +13,7 @@ import {
   generateUUID,
   TenantMismatchError,
   } from './helpers';
+import { logger } from '../../security/logger';
 
 export interface LeadsRepository {
   createLead(
@@ -92,7 +93,12 @@ export function createLeadsRepository(leadsStore: Map<string, Lead>): LeadsRepos
               return record;
             }
             if (error.code === '23505') {
-              console.warn(`[Supabase Persistence Warning] Duplicate key conflict (code 23505) on lead_id "${input.lead_id}". Resolving lead record.`);
+              logger.warn(`Duplicate key conflict on lead_id "${input.lead_id}". Resolving lead record.`, {
+                service: 'supabase-repo',
+                operation: 'createLead',
+                status: 'DUPLICATE_KEY_RESOLVING',
+                data: { lead_id: input.lead_id },
+              });
               let fetchQuery = client.from('leads').select('*').eq('lead_id', input.lead_id);
               if (!scope.isPlatformAdmin && tenantId) {
                 fetchQuery = fetchQuery.eq('tenant_id', tenantId);
@@ -139,7 +145,12 @@ export function createLeadsRepository(leadsStore: Map<string, Lead>): LeadsRepos
                 }
               }
             }
-            console.error('[Supabase Persistence Error] Failed to insert lead:', error);
+            logger.error('Failed to insert lead', {
+              service: 'supabase-repo',
+              operation: 'createLead',
+              error_category: 'SUPABASE_INSERT_ERROR',
+              data: { error: error.message, code: error.code },
+            });
             throw new Error(`Supabase insert failed on public.leads: ${error.message} (code: ${error.code || 'UNKNOWN'})`);
           }
           if (data) {
@@ -173,7 +184,7 @@ export function createLeadsRepository(leadsStore: Map<string, Lead>): LeadsRepos
             if (error.code === '42703' || error.code === 'PGRST204' || error.code === 'PGRST205' || error.message?.includes('does not exist') || error.message?.includes('not find the')) {
               // fallback
             } else {
-              console.error('[Supabase Query Error] Failed to get lead by id:', error);
+              logger.error('[Supabase Query Error] Failed to get lead by id:', { service: "supabase-repo", error_category: "DATABASE_ERROR", data: { error: (error)?.message || String(error) } });
               throw new Error(`Supabase query failed on public.leads: ${error.message}`);
             }
           } else if (data) {
@@ -210,7 +221,7 @@ export function createLeadsRepository(leadsStore: Map<string, Lead>): LeadsRepos
             if (error.code === '42703' || error.code === 'PGRST204' || error.code === 'PGRST205' || error.message?.includes('does not exist') || error.message?.includes('not find the')) {
               // fallback
             } else {
-              console.error('[Supabase Query Error] Failed to get lead by lead_id:', error);
+              logger.error('[Supabase Query Error] Failed to get lead by lead_id:', { service: "supabase-repo", error_category: "DATABASE_ERROR", data: { error: (error)?.message || String(error) } });
               throw new Error(`Supabase query failed on public.leads: ${error.message}`);
             }
           } else if (data) {
@@ -268,7 +279,7 @@ export function createLeadsRepository(leadsStore: Map<string, Lead>): LeadsRepos
             if (error.code === '42703' || error.code === 'PGRST204' || error.code === 'PGRST205' || error.message?.includes('does not exist') || error.message?.includes('not find the')) {
               // fallback
             } else {
-              console.error('[Supabase Update Error] Failed to update lead:', error);
+              logger.error('[Supabase Update Error] Failed to update lead:', { service: "supabase-repo", error_category: "DATABASE_ERROR", data: { error: (error)?.message || String(error) } });
               throw new Error(`Supabase update failed on public.leads: ${error.message}`);
             }
           } else if (data) {
@@ -354,7 +365,7 @@ export function createLeadsRepository(leadsStore: Map<string, Lead>): LeadsRepos
             if (error.code === '42703' || error.code === 'PGRST204' || error.code === 'PGRST205' || error.message?.includes('does not exist') || error.message?.includes('not find the')) {
               // fallback
             } else {
-              console.error('[Supabase Delete Error] Failed to delete lead:', error);
+              logger.error('[Supabase Delete Error] Failed to delete lead:', { service: "supabase-repo", error_category: "DATABASE_ERROR", data: { error: (error)?.message || String(error) } });
               throw new Error(`Supabase delete failed on public.leads: ${error.message}`);
             }
           }
@@ -417,7 +428,7 @@ export function createLeadEnrichmentRepository(
             if (error.code === '42703' || error.code === 'PGRST204' || error.code === 'PGRST205' || error.message?.includes('does not exist') || error.message?.includes('not find the')) {
               // fallback
             } else {
-              console.error('[Supabase Insert Error] lead_enrichment:', error);
+              logger.error('[Supabase Insert Error] lead_enrichment:', { service: "supabase-repo", error_category: "DATABASE_ERROR", data: { error: (error)?.message || String(error) } });
               throw new Error(`Supabase insert failed on lead_enrichment: ${error.message}`);
             }
           } else if (data) return data;
@@ -448,7 +459,7 @@ export function createLeadEnrichmentRepository(
             if (error.code === '42703' || error.code === 'PGRST204' || error.code === 'PGRST205' || error.message?.includes('does not exist') || error.message?.includes('not find the')) {
               // fallback
             } else {
-              console.error('[Supabase Query Error] lead_enrichment:', error);
+              logger.error('[Supabase Query Error] lead_enrichment:', { service: "supabase-repo", error_category: "DATABASE_ERROR", data: { error: (error)?.message || String(error) } });
               throw new Error(`Supabase query failed on lead_enrichment: ${error.message}`);
             }
           } else if (data) return data;
@@ -502,7 +513,7 @@ export function createLeadEventsRepository(
             if (error.code === '42703' || error.code === 'PGRST204' || error.code === 'PGRST205' || error.message?.includes('does not exist') || error.message?.includes('not find the')) {
               // fallback
             } else {
-              console.error('[Supabase Insert Error] lead_events:', error);
+              logger.error('[Supabase Insert Error] lead_events:', { service: "supabase-repo", error_category: "DATABASE_ERROR", data: { error: (error)?.message || String(error) } });
               throw new Error(`Supabase insert failed on lead_events: ${error.message}`);
             }
           } else if (data) return data;
@@ -537,7 +548,7 @@ export function createLeadEventsRepository(
             if (error.code === '42703' || error.code === 'PGRST204' || error.code === 'PGRST205' || error.message?.includes('does not exist') || error.message?.includes('not find the')) {
               // fallback
             } else {
-              console.error('[Supabase Query Error] lead_events:', error);
+              logger.error('[Supabase Query Error] lead_events:', { service: "supabase-repo", error_category: "DATABASE_ERROR", data: { error: (error)?.message || String(error) } });
               throw new Error(`Supabase query failed on lead_events: ${error.message}`);
             }
           } else if (data) return data;

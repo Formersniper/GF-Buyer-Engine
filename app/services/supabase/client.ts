@@ -167,10 +167,10 @@ export async function checkPersistenceHealth(): Promise<PersistenceHealthStatus>
   if (!url || !key) {
     return {
       mode: 'IN_MEMORY',
-      displayName: 'Local Development Store',
+      displayName: 'Preview / Local Development Mode',
       urlHost: null,
       isLive: false,
-      message: 'Supabase credentials not configured in environment. Operating in explicit Local Development Store mode.',
+      message: 'AI Studio browser preview is using the local development store. Production/server persistence uses the configured Supabase backend.',
       lastChecked: now,
       safeDiagnostics,
     };
@@ -183,7 +183,7 @@ export async function checkPersistenceHealth(): Promise<PersistenceHealthStatus>
       displayName: 'Supabase Connection Error',
       urlHost: host,
       isLive: false,
-      message: 'Failed to instantiate Supabase client with provided credentials.',
+      message: 'Supabase credentials are configured, but the backend connection could not be verified.',
       lastChecked: now,
       safeDiagnostics,
     };
@@ -204,7 +204,7 @@ export async function checkPersistenceHealth(): Promise<PersistenceHealthStatus>
         displayName: 'Supabase Connection Error',
         urlHost: host,
         isLive: false,
-        message: `Supabase query failed on public.leads: ${error.message} (code: ${error.code || 'UNKNOWN'})`,
+        message: 'Supabase credentials are configured, but the backend connection could not be verified.',
         latencyMs,
         lastChecked: now,
         safeDiagnostics,
@@ -213,22 +213,21 @@ export async function checkPersistenceHealth(): Promise<PersistenceHealthStatus>
 
     return {
       mode: 'LIVE_SUPABASE',
-      displayName: 'Supabase PostgreSQL',
+      displayName: 'Live Supabase Backend',
       urlHost: host,
       isLive: true,
-      message: `Connected to live Supabase database (${count ?? 0} leads in public.leads).`,
+      message: `Connected to Supabase PostgreSQL (${count ?? 0} leads in public.leads).`,
       latencyMs,
       lastChecked: now,
       safeDiagnostics,
     };
   } catch (err: unknown) {
-    const errorMsg = err instanceof Error ? err.message : 'Unknown network failure';
     return {
       mode: 'DISCONNECTED',
       displayName: 'Supabase Connection Error',
       urlHost: host,
       isLive: false,
-      message: `Supabase connectivity error: ${errorMsg}`,
+      message: 'Supabase credentials are configured, but the backend connection could not be verified.',
       lastChecked: now,
       safeDiagnostics,
     };

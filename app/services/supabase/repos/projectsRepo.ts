@@ -1,3 +1,4 @@
+import { logger } from "../../security/logger";
 /**
  * Tenant-Aware Projects and Project Matches Repositories
  */
@@ -85,7 +86,7 @@ export function createProjectsRepository(
               projectsStore.set(record.id, record);
               return record;
             }
-            console.error('[Supabase Insert Error] projects:', error);
+            logger.error('[Supabase Insert Error] projects:', { service: "supabase-repo", error_category: "DATABASE_ERROR", data: { error: (error)?.message || String(error) } });
             throw new Error(`Supabase insert failed on projects: ${error.message}`);
           }
           if (data) {
@@ -119,7 +120,7 @@ export function createProjectsRepository(
             if (error.code === '42703' || error.code === 'PGRST204' || error.code === 'PGRST205' || error.message?.includes('does not exist') || error.message?.includes('not find the')) {
               // fallback
             } else {
-              console.error('[Supabase Query Error] projects:', error);
+              logger.error('[Supabase Query Error] projects:', { service: "supabase-repo", error_category: "DATABASE_ERROR", data: { error: (error)?.message || String(error) } });
               throw new Error(`Supabase query failed on projects: ${error.message}`);
             }
           } else if (data) return data;
@@ -151,7 +152,7 @@ export function createProjectsRepository(
             if (error.code === '42703' || error.code === 'PGRST204' || error.code === 'PGRST205' || error.message?.includes('does not exist') || error.message?.includes('not find the')) {
               // fallback
             } else {
-              console.error('[Supabase Query Error] projects:', error);
+              logger.error('[Supabase Query Error] projects:', { service: "supabase-repo", error_category: "DATABASE_ERROR", data: { error: (error)?.message || String(error) } });
               throw new Error(`Supabase query failed on projects: ${error.message}`);
             }
           } else if (data) return data;
@@ -189,7 +190,7 @@ export function createProjectsRepository(
             if (error.code === '42703' || error.code === 'PGRST204' || error.code === 'PGRST205' || error.message?.includes('does not exist') || error.message?.includes('not find the')) {
               // fallback
             } else {
-              console.error('[Supabase Query Error] projects:', error);
+              logger.error('[Supabase Query Error] projects:', { service: "supabase-repo", error_category: "DATABASE_ERROR", data: { error: (error)?.message || String(error) } });
               throw new Error(`Supabase query failed on projects: ${error.message}`);
             }
           } else if (data) return data;
@@ -267,7 +268,7 @@ export function createProjectMatchesRepository(
             if (error.code === '42703' || error.code === 'PGRST204' || error.code === 'PGRST205' || error.message?.includes('does not exist') || error.message?.includes('not find the')) {
               // fallback
             } else {
-              console.error('[Supabase Upsert Error] project_matches:', error);
+              logger.error('[Supabase Upsert Error] project_matches:', { service: "supabase-repo", error_category: "DATABASE_ERROR", data: { error: (error)?.message || String(error) } });
               throw new Error(`Supabase upsert failed on project_matches: ${error.message}`);
             }
           } else if (data) return data;
@@ -299,7 +300,7 @@ export function createProjectMatchesRepository(
             if (error.code === '42703' || error.code === 'PGRST204' || error.code === 'PGRST205' || error.message?.includes('does not exist') || error.message?.includes('not find the')) {
               // fallback
             } else {
-              console.error('[Supabase Query Error] project_matches:', error);
+              logger.error('[Supabase Query Error] project_matches:', { service: "supabase-repo", error_category: "DATABASE_ERROR", data: { error: (error)?.message || String(error) } });
               throw new Error(`Supabase query failed on project_matches: ${error.message}`);
             }
           } else if (data) return data;

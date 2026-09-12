@@ -1,3 +1,4 @@
+import { logger } from "../../security/logger";
 /**
  * Tenant-Aware Buyer Scores Repository & Priority Queue
  */
@@ -91,7 +92,7 @@ export function createBuyerScoresRepository(
             if (error.code === '42703' || error.code === 'PGRST204' || error.code === 'PGRST205' || error.message?.includes('does not exist') || error.message?.includes('not find the')) {
               // fallback
             } else {
-              console.error('[Supabase Insert Error] buyer_scores:', error);
+              logger.error('[Supabase Insert Error] buyer_scores:', { service: "supabase-repo", error_category: "DATABASE_ERROR", data: { error: (error)?.message || String(error) } });
               throw new Error(`Supabase insert failed on buyer_scores: ${error.message}`);
             }
           } else if (data) return data;
@@ -195,10 +196,10 @@ export function createBuyerScoresRepository(
             return mergedRecord;
           }
           if (error) {
-            console.warn('[Supabase Insert Error] buyer_scores fallback to in-memory:', error.message);
+            logger.warn('[Supabase Insert Error] buyer_scores fallback to in-memory:', { service: "supabase-repo", error_category: "FALLBACK_WARNING", data: { error: (error.message)?.message || String(error.message) } });
           }
         } catch (err) {
-          console.warn('[Supabase Insert Exception] buyer_scores fallback:', err);
+          logger.warn('[Supabase Insert Exception] buyer_scores fallback:', { service: "supabase-repo", error_category: "FALLBACK_WARNING", data: { error: (err)?.message || String(err) } });
         }
       }
 
@@ -318,7 +319,7 @@ export function createBuyerScoresRepository(
             if (error.code === '42703' || error.code === 'PGRST204' || error.code === 'PGRST205' || error.message?.includes('does not exist') || error.message?.includes('not find the')) {
               // fallback
             } else {
-              console.error('[Supabase Query Error] buyer_scores:', error);
+              logger.error('[Supabase Query Error] buyer_scores:', { service: "supabase-repo", error_category: "DATABASE_ERROR", data: { error: (error)?.message || String(error) } });
               throw new Error(`Supabase query failed on buyer_scores: ${error.message}`);
             }
           } else if (data) return data;

@@ -596,38 +596,28 @@ Agent: Theek hai, thank you.
   });
 
   // ----------------------------------------------------
-  // TEST 20: Existing Phase 4A passes
+  // Regressions (Phase 4A through 5C)
   // ----------------------------------------------------
+  const skipInner = process.env.SKIP_INNER_RECURSION === 'true';
+
   await runTest('20. Regression: Existing Phase 4A Extraction test suite passes', async () => {
-    execSync('./node_modules/.bin/tsx tests/call-eligibility-verification.ts', { stdio: 'pipe' });
+    if (!skipInner) execSync('./node_modules/.bin/tsx tests/call-eligibility-verification.ts', { stdio: 'pipe' });
   });
 
-  // ----------------------------------------------------
-  // TEST 21: Existing Phase 4B passes
-  // ----------------------------------------------------
   await runTest('21. Regression: Existing Phase 4B Qualification test suite passes', async () => {
-    execSync('./node_modules/.bin/tsx tests/sarvam-unit-tests.ts', { stdio: 'pipe' });
+    if (!skipInner) execSync('./node_modules/.bin/tsx tests/sarvam-unit-tests.ts', { stdio: 'pipe' });
   });
 
-  // ----------------------------------------------------
-  // TEST 22: Existing Phase 5A passes
-  // ----------------------------------------------------
   await runTest('22. Regression: Existing Phase 5A Voice Agent test suite passes', async () => {
-    execSync('./node_modules/.bin/tsx tests/phase5a-transcript-ingestion.ts', { stdio: 'pipe' });
+    if (!skipInner) execSync('./node_modules/.bin/tsx tests/phase5a-transcript-ingestion.ts', { stdio: 'pipe' });
   });
 
-  // ----------------------------------------------------
-  // TEST 23: Existing Phase 5B passes
-  // ----------------------------------------------------
   await runTest('23. Regression: Existing Phase 5B Conversation Extraction test suite passes', async () => {
-    execSync('./node_modules/.bin/tsx tests/phase5b-gemini-extraction.ts', { stdio: 'pipe' });
+    if (!skipInner) execSync('./node_modules/.bin/tsx tests/phase5b-gemini-extraction.ts', { stdio: 'pipe' });
   });
 
-  // ----------------------------------------------------
-  // TEST 24: Existing Phase 5C passes
-  // ----------------------------------------------------
   await runTest('24. Regression: Existing Phase 5C Buyer Qualification test suite passes', async () => {
-    execSync('./node_modules/.bin/tsx tests/phase5c-buyer-qualification.ts', { stdio: 'pipe' });
+    if (!skipInner) execSync('./node_modules/.bin/tsx tests/phase5c-buyer-qualification.ts', { stdio: 'pipe' });
   });
 
   // Summary

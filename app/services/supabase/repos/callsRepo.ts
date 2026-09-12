@@ -1,3 +1,4 @@
+import { logger } from "../../security/logger";
 /**
  * Tenant-Aware Calls Repository
  */
@@ -79,7 +80,7 @@ export function createCallsRepository(
             if (error.code === '42703' || error.code === 'PGRST204' || error.code === 'PGRST205' || error.message?.includes('does not exist') || error.message?.includes('not find the')) {
               // fallback
             } else {
-              console.error('[Supabase Insert Error] calls:', error);
+              logger.error('[Supabase Insert Error] calls:', { service: "supabase-repo", error_category: "DATABASE_ERROR", data: { error: (error)?.message || String(error) } });
               throw new Error(`Supabase insert failed on calls: ${error.message}`);
             }
           } else if (data) {
@@ -118,7 +119,7 @@ export function createCallsRepository(
             if (error.code === '42703' || error.code === 'PGRST204' || error.code === 'PGRST205' || error.message?.includes('does not exist') || error.message?.includes('not find the')) {
               // fallback
             } else {
-              console.error('[Supabase Query Error] calls:', error);
+              logger.error('[Supabase Query Error] calls:', { service: "supabase-repo", error_category: "DATABASE_ERROR", data: { error: (error)?.message || String(error) } });
               throw new Error(`Supabase query failed on calls: ${error.message}`);
             }
           } else if (data) return data;
@@ -157,7 +158,7 @@ export function createCallsRepository(
             if (error.code === '42703' || error.code === 'PGRST204' || error.code === 'PGRST205' || error.message?.includes('does not exist') || error.message?.includes('not find the')) {
               // fallback
             } else {
-              console.error('[Supabase Query Error] calls:', error);
+              logger.error('[Supabase Query Error] calls:', { service: "supabase-repo", error_category: "DATABASE_ERROR", data: { error: (error)?.message || String(error) } });
               throw new Error(`Supabase query failed on calls: ${error.message}`);
             }
           } else if (data && data.length > 0) return data[0];
@@ -193,7 +194,7 @@ export function createCallsRepository(
             if (error.code === '42703' || error.code === 'PGRST204' || error.code === 'PGRST205' || error.message?.includes('does not exist') || error.message?.includes('not find the')) {
               // fallback
             } else {
-              console.error('[Supabase Query Error] calls:', error);
+              logger.error('[Supabase Query Error] calls:', { service: "supabase-repo", error_category: "DATABASE_ERROR", data: { error: (error)?.message || String(error) } });
               throw new Error(`Supabase query failed on calls: ${error.message}`);
             }
           } else if (data) return data;
@@ -239,7 +240,7 @@ export function createCallsRepository(
             if (error.code === '42703' || error.code === 'PGRST204' || error.code === 'PGRST205' || error.message?.includes('does not exist') || error.message?.includes('not find the')) {
               // fallback
             } else {
-              console.error('[Supabase Update Error] calls:', error);
+              logger.error('[Supabase Update Error] calls:', { service: "supabase-repo", error_category: "DATABASE_ERROR", data: { error: (error)?.message || String(error) } });
               throw new Error(`Supabase update failed on calls: ${error.message}`);
             }
           } else if (data) {

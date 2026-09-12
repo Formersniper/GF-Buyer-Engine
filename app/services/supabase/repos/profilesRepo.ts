@@ -4,6 +4,7 @@
 
 import { BuyerProfile, BuyerPreference } from '../../../schemas/database';
 import { getSupabaseClient } from '../client';
+import { logger } from '../../security/logger';
 import { 
   TenantScope,
   TenantContext,
@@ -90,7 +91,12 @@ export function createBuyerProfilesRepository(
             if (error.code === '42703' || error.code === 'PGRST204' || error.code === 'PGRST205' || error.message?.includes('does not exist') || error.message?.includes('not find the')) {
               // fallback
             } else {
-              console.error('[Supabase Upsert Error] buyer_profiles:', error);
+              logger.error('[Supabase Upsert Error] buyer_profiles', {
+                service: 'supabase-repo',
+                operation: 'upsertBuyerProfile',
+                error_category: 'DATABASE_ERROR',
+                data: { error: error.message },
+              });
               throw new Error(`Supabase upsert failed on buyer_profiles: ${error.message}`);
             }
           } else if (data) {
@@ -122,7 +128,12 @@ export function createBuyerProfilesRepository(
             if (error.code === '42703' || error.code === 'PGRST204' || error.code === 'PGRST205' || error.message?.includes('does not exist') || error.message?.includes('not find the')) {
               // fallback
             } else {
-              console.error('[Supabase Query Error] buyer_profiles:', error);
+              logger.error('[Supabase Query Error] buyer_profiles', {
+                service: 'supabase-repo',
+                operation: 'getBuyerProfile',
+                error_category: 'DATABASE_ERROR',
+                data: { error: error.message },
+              });
               throw new Error(`Supabase query failed on buyer_profiles: ${error.message}`);
             }
           } else if (data) return data;
@@ -181,7 +192,12 @@ export function createBuyerPreferencesRepository(
             if (error.code === '42703' || error.code === 'PGRST204' || error.code === 'PGRST205' || error.message?.includes('does not exist') || error.message?.includes('not find the')) {
               // fallback
             } else {
-              console.error('[Supabase Insert Error] buyer_preferences:', error);
+              logger.error('[Supabase Insert Error] buyer_preferences', {
+                service: 'supabase-repo',
+                operation: 'addBuyerPreference',
+                error_category: 'DATABASE_ERROR',
+                data: { error: error.message },
+              });
               throw new Error(`Supabase insert failed on buyer_preferences: ${error.message}`);
             }
           } else if (data) return data;
@@ -212,7 +228,12 @@ export function createBuyerPreferencesRepository(
             if (error.code === '42703' || error.code === 'PGRST204' || error.code === 'PGRST205' || error.message?.includes('does not exist') || error.message?.includes('not find the')) {
               // fallback
             } else {
-              console.error('[Supabase Query Error] buyer_preferences:', error);
+              logger.error('[Supabase Query Error] buyer_preferences', {
+                service: 'supabase-repo',
+                operation: 'getBuyerPreferences',
+                error_category: 'DATABASE_ERROR',
+                data: { error: error.message },
+              });
               throw new Error(`Supabase query failed on buyer_preferences: ${error.message}`);
             }
           } else if (data) return data;

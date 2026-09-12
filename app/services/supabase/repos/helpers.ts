@@ -74,10 +74,19 @@ export function generateUUID(): string {
   });
 }
 
+import { logger } from '../../security/logger';
+
 export function checkProductionFallback(operation: string, error?: any): void {
   if (process.env.NODE_ENV === 'production') {
     const msg = `[Supabase Fallback Error] in-memory fallback is disabled in production for: ${operation}. ${error ? error.message : 'Missing client or connection.'}`;
-    console.error(msg, error);
+    logger.error(msg, {
+      service: 'supabase-repo',
+      operation,
+      error_category: 'PERSISTENCE_FALLBACK_DENIED',
+      data: {
+        error: error ? error.message : undefined,
+      },
+    });
     throw new Error(msg);
   }
 }

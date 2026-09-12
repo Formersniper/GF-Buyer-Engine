@@ -101,7 +101,7 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center gap-3 sm:gap-4 text-[11px]">
           <div className="hidden lg:flex items-center gap-1.5 text-slate-500">
             <Database className="w-3.5 h-3.5 text-slate-400" />
-            <span className="font-mono">{isSupabaseConfigured ? 'Supabase: Connected' : 'Supabase: Dual-Mode Seed'}</span>
+            <span className="font-mono">{isSupabaseConfigured ? 'Supabase: Live Backend' : 'Preview Mode: Local Store'}</span>
           </div>
 
           <div className="flex items-center gap-2.5 pl-2 sm:border-l border-slate-200">

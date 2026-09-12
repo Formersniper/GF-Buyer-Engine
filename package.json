@@ -24,8 +24,13 @@
     "test:security:ratelimit": "tsx tests/security-rate-limiting.ts",
     "test:security:concurrency": "tsx tests/security-concurrency.ts",
     "test:security:costs": "tsx tests/security-provider-cost-controls.ts",
-    "test:security:all": "npm run test:security:auth && npm run test:security:ratelimit && npm run test:security:concurrency && npm run test:security:costs",
-    "test:all": "npm run test:phase4a && npm run test:phase4b && npm run test:phase5a && npm run test:phase5b && npm run test:phase5c && npm run test:phase5d && npm run test:phase5e && npm run test:phase5f"
+    "test:security:pii": "tsx tests/security-pii-logging.ts",
+    "test:security:redaction": "tsx tests/security-log-redaction.ts",
+    "test:security:errors": "tsx tests/security-error-sanitization.ts",
+    "test:security:correlation": "tsx tests/correlation-id.ts",
+    "test:persistence": "tsx tests/persistence-diagnostics.ts",
+    "test:security:all": "npm run test:security:auth && npm run test:security:ratelimit && npm run test:security:concurrency && npm run test:security:costs && npm run test:security:pii && npm run test:security:redaction && npm run test:security:errors && npm run test:security:correlation && npm run test:persistence",
+    "test:all": "SKIP_INNER_RECURSION=true npm run test:phase4a && SKIP_INNER_RECURSION=true npm run test:phase4b && SKIP_INNER_RECURSION=true npm run test:phase5a && SKIP_INNER_RECURSION=true npm run test:phase5b && SKIP_INNER_RECURSION=true npm run test:phase5c && SKIP_INNER_RECURSION=true npm run test:phase5d && SKIP_INNER_RECURSION=true npm run test:phase5e && SKIP_INNER_RECURSION=true npm run test:phase5f"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

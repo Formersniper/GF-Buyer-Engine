@@ -1,3 +1,5 @@
+import { logger } from './security/logger';
+
 export enum ExternalProviderErrorType {
   CONFIGURATION = 'CONFIGURATION',
   AUTHENTICATION = 'AUTHENTICATION',
@@ -41,7 +43,17 @@ export async function withRetry<T>(
         throw error;
       }
       const delay = options.baseDelayMs * Math.pow(2, attempt - 1);
-      console.warn(`[${options.provider}] Retry ${attempt}/${options.maxAttempts} in ${delay}ms...`);
+      logger.warn(`Provider retry attempt ${attempt}/${options.maxAttempts} in ${delay}ms`, {
+        service: 'provider-retry',
+        operation: 'withRetry',
+        status: 'RETRYING',
+        data: {
+          provider: options.provider,
+          attempt,
+          maxAttempts: options.maxAttempts,
+          delay_ms: delay,
+        },
+      });
       await new Promise(resolve => setTimeout(resolve, delay));
       attempt++;
     }

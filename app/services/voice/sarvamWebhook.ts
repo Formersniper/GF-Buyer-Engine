@@ -14,6 +14,7 @@ import { supabaseDataService } from '../supabase/repositories';
 import { WorkflowStatus } from '../../schemas/workflow';
 import { transcriptIngestionService } from './transcriptIngestionService';
 import { WebhookEvent } from '../../schemas/tenant';
+import { logger } from '../security/logger';
 
 export interface SarvamWebhookEventPayload {
   event_id?: string;
@@ -254,8 +255,16 @@ export async function processSarvamWebhook(
   if (hasTranscriptData) {
     try {
       await transcriptIngestionService.ingestSarvamTranscript(payload);
-    } catch (ingestErr) {
-      console.error('[Transcript Ingestion Error] Failed to ingest transcript from webhook payload');
+    } catch (ingestErr: unknown) {
+      logger.error('Failed to ingest transcript from webhook payload', {
+        service: 'sarvam-webhook',
+        operation: 'ingestTranscript',
+        error_category: 'TRANSCRIPT_INGESTION_ERROR',
+        data: {
+          error: ingestErr instanceof Error ? ingestErr.message : String(ingestErr),
+          provider_call_id: externalCallId,
+        },
+      });
     }
   }
 

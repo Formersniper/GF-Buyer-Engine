@@ -204,7 +204,8 @@ export class ConversationExtractionService {
       const lead = await supabaseDataService.leads.getLead(leadId);
       const tenantId = lead?.tenant_id || null;
       if (tenantId) {
-        const rl = await supabaseDataService.security.checkAndIncrementRateLimit(tenantId, 'gemini_extraction', 3600, 100);
+        const maxOps = parseInt(process.env.MAX_GEMINI_OPS_PER_TENANT_PER_HOUR || '1000', 10);
+        const rl = await supabaseDataService.security.checkAndIncrementRateLimit(tenantId, 'gemini_extraction', 3600, maxOps);
         if (!rl.allowed) {
           throw new Error('Tenant rate limit exceeded for Gemini extraction');
         }

@@ -705,9 +705,11 @@ Buyer: No, we are strictly only looking in Vrindavan near Chatti Kila Road.`,
   // -------------------------------------------------------------
   // Regression Tests (Phase 4A through 5D)
   // -------------------------------------------------------------
+  const skipInner = process.env.SKIP_INNER_RECURSION === 'true';
+
   await runTest('23. Existing Phase 4A passes', async () => {
     try {
-      execSync('./node_modules/.bin/tsx tests/call-eligibility-verification.ts', { stdio: 'pipe' });
+      if (!skipInner) execSync('./node_modules/.bin/tsx tests/call-eligibility-verification.ts', { stdio: 'pipe' });
     } catch (e: any) {
       throw new Error(`Phase 4A regression failed: ${e.stdout?.toString() || e.message}`);
     }
@@ -715,7 +717,7 @@ Buyer: No, we are strictly only looking in Vrindavan near Chatti Kila Road.`,
 
   await runTest('24. Existing Phase 4B passes', async () => {
     try {
-      execSync('./node_modules/.bin/tsx tests/sarvam-unit-tests.ts', { stdio: 'pipe' });
+      if (!skipInner) execSync('./node_modules/.bin/tsx tests/sarvam-unit-tests.ts', { stdio: 'pipe' });
     } catch (e: any) {
       throw new Error(`Phase 4B regression failed: ${e.stdout?.toString() || e.message}`);
     }
@@ -723,7 +725,7 @@ Buyer: No, we are strictly only looking in Vrindavan near Chatti Kila Road.`,
 
   await runTest('25. Existing Phase 5A passes', async () => {
     try {
-      execSync('./node_modules/.bin/tsx tests/phase5a-transcript-ingestion.ts', { stdio: 'pipe' });
+      if (!skipInner) execSync('./node_modules/.bin/tsx tests/phase5a-transcript-ingestion.ts', { stdio: 'pipe' });
     } catch (e: any) {
       throw new Error(`Phase 5A regression failed: ${e.stdout?.toString() || e.message}`);
     }
@@ -731,7 +733,7 @@ Buyer: No, we are strictly only looking in Vrindavan near Chatti Kila Road.`,
 
   await runTest('26. Existing Phase 5B passes', async () => {
     try {
-      execSync('./node_modules/.bin/tsx tests/phase5b-gemini-extraction.ts', { stdio: 'pipe' });
+      if (!skipInner) execSync('./node_modules/.bin/tsx tests/phase5b-gemini-extraction.ts', { stdio: 'pipe' });
     } catch (e: any) {
       throw new Error(`Phase 5B regression failed: ${e.stdout?.toString() || e.message}`);
     }
@@ -739,7 +741,7 @@ Buyer: No, we are strictly only looking in Vrindavan near Chatti Kila Road.`,
 
   await runTest('27. Existing Phase 5C passes', async () => {
     try {
-      execSync('./node_modules/.bin/tsx tests/phase5c-buyer-qualification.ts', { stdio: 'pipe' });
+      if (!skipInner) execSync('./node_modules/.bin/tsx tests/phase5c-buyer-qualification.ts', { stdio: 'pipe' });
     } catch (e: any) {
       throw new Error(`Phase 5C regression failed: ${e.stdout?.toString() || e.message}`);
     }
@@ -747,7 +749,7 @@ Buyer: No, we are strictly only looking in Vrindavan near Chatti Kila Road.`,
 
   await runTest('28. Existing Phase 5D passes', async () => {
     try {
-      execSync('./node_modules/.bin/tsx tests/phase5d-buyer-scoring.ts', { stdio: 'pipe' });
+      if (!skipInner) execSync('./node_modules/.bin/tsx tests/phase5d-buyer-scoring.ts', { stdio: 'pipe' });
     } catch (e: any) {
       throw new Error(`Phase 5D regression failed: ${e.stdout?.toString() || e.message}`);
     }

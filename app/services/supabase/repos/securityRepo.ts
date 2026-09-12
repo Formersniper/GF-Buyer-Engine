@@ -1,3 +1,4 @@
+import { logger } from "../../security/logger";
 import { getSupabaseClient } from '../client'; // Just for context interface if needed
 
 export interface IdempotencyRecord {
@@ -22,6 +23,7 @@ export interface SecurityRepository {
   releaseResourceLock(resourceType: string, resourceId: string, lockedBy: string): Promise<void>;
   
   checkAndIncrementRateLimit(targetId: string, operation: string, windowSeconds: number, maxRequests: number): Promise<{ allowed: boolean; count: number }>;
+  resetRateLimits?(): void;
 }
 
 export function createSecurityRepository(
@@ -346,6 +348,12 @@ export function createSecurityRepository(
       }
       const count = data as number;
       return { allowed: count <= maxRequests, count };
+    },
+    
+    resetRateLimits() {
+      rateLimitsStore.clear();
+      locksStore.clear();
+      idempotencyStore.clear();
     }
   };
 }

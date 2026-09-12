@@ -4,6 +4,8 @@ import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { requireAuth, requireRole } from './app/middleware/auth';
 import { rateLimit } from './app/middleware/rateLimit';
+import { correlationMiddleware, sanitizedErrorHandler } from './app/middleware/correlation';
+import { logger } from './app/services/security/logger';
 import { callService } from './app/services/calls/callService';
 import { processSarvamWebhook } from './app/services/voice/sarvamWebhook';
 import { transcriptIngestionService } from './app/services/voice/transcriptIngestionService';
@@ -21,6 +23,9 @@ export function createApp(): Express {
 
   // JSON body parser
   app.use(express.json());
+
+  // Attach correlation and request ID propagation middleware
+  app.use(correlationMiddleware());
 
   // --- PUBLIC API ROUTES ---
 
@@ -473,6 +478,9 @@ export function createApp(): Express {
     }
   });
 
+  // Global sanitized error handler (Phase 8A.9)
+  app.use(sanitizedErrorHandler());
+
   return app;
 }
 
@@ -497,7 +505,11 @@ export async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`GrowthForge Server running on http://0.0.0.0:${PORT}`);
+    logger.info(`GrowthForge Server running on http://0.0.0.0:${PORT}`, {
+      service: 'http-server',
+      operation: 'startServer',
+      status: 'LISTENING',
+    });
   });
 }
 

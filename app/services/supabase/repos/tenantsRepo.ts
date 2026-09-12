@@ -1,3 +1,4 @@
+import { logger } from "../../security/logger";
 /**
  * Tenant, Membership, API Key, and Webhook Event Repositories
  */
@@ -53,7 +54,7 @@ export function createTenantsRepository(tenantsStore: Map<string, Tenant>): Tena
       if (client) {
         const { data, error } = await client.from('tenants').insert(record).select().single();
         if (error) {
-          console.error('[Supabase Insert Error] tenants:', error);
+          logger.error('[Supabase Insert Error] tenants:', { service: "supabase-repo", error_category: "DATABASE_ERROR", data: { error: (error)?.message || String(error) } });
           throw new Error(`Supabase insert failed on tenants: ${error.message}`);
         }
         if (data) {
@@ -71,7 +72,7 @@ export function createTenantsRepository(tenantsStore: Map<string, Tenant>): Tena
       if (client) {
         const { data, error } = await client.from('tenants').select('*').eq('id', id).maybeSingle();
         if (error) {
-          console.error('[Supabase Query Error] tenants:', error);
+          logger.error('[Supabase Query Error] tenants:', { service: "supabase-repo", error_category: "DATABASE_ERROR", data: { error: (error)?.message || String(error) } });
           throw new Error(`Supabase query failed on tenants: ${error.message}`);
         }
         if (data) {
@@ -88,7 +89,7 @@ export function createTenantsRepository(tenantsStore: Map<string, Tenant>): Tena
       if (client) {
         const { data, error } = await client.from('tenants').select('*').eq('slug', slug).maybeSingle();
         if (error) {
-          console.error('[Supabase Query Error] tenants:', error);
+          logger.error('[Supabase Query Error] tenants:', { service: "supabase-repo", error_category: "DATABASE_ERROR", data: { error: (error)?.message || String(error) } });
           throw new Error(`Supabase query failed on tenants: ${error.message}`);
         }
         if (data) {
@@ -108,7 +109,7 @@ export function createTenantsRepository(tenantsStore: Map<string, Tenant>): Tena
       if (client) {
         const { data, error } = await client.from('tenants').select('*').order('created_at', { ascending: false });
         if (error) {
-          console.error('[Supabase Query Error] tenants:', error);
+          logger.error('[Supabase Query Error] tenants:', { service: "supabase-repo", error_category: "DATABASE_ERROR", data: { error: (error)?.message || String(error) } });
           throw new Error(`Supabase list query failed on tenants: ${error.message}`);
         }
         if (data) {
@@ -135,7 +136,7 @@ export function createTenantsRepository(tenantsStore: Map<string, Tenant>): Tena
           .select()
           .single();
         if (error) {
-          console.error('[Supabase Update Error] tenants:', error);
+          logger.error('[Supabase Update Error] tenants:', { service: "supabase-repo", error_category: "DATABASE_ERROR", data: { error: (error)?.message || String(error) } });
           throw new Error(`Supabase update failed on tenants: ${error.message}`);
         }
         if (data) {
@@ -180,7 +181,7 @@ export function createTenantMembershipsRepository(
       if (client) {
         const { data, error } = await client.from('tenant_memberships').insert(record).select().single();
         if (error) {
-          console.error('[Supabase Insert Error] tenant_memberships:', error);
+          logger.error('[Supabase Insert Error] tenant_memberships:', { service: "supabase-repo", error_category: "DATABASE_ERROR", data: { error: (error)?.message || String(error) } });
           throw new Error(`Supabase insert failed on tenant_memberships: ${error.message}`);
         }
         if (data) {
@@ -203,7 +204,7 @@ export function createTenantMembershipsRepository(
           .eq('user_id', userId)
           .maybeSingle();
         if (error) {
-          console.error('[Supabase Query Error] tenant_memberships:', error);
+          logger.error('[Supabase Query Error] tenant_memberships:', { service: "supabase-repo", error_category: "DATABASE_ERROR", data: { error: (error)?.message || String(error) } });
           throw new Error(`Supabase query failed on tenant_memberships: ${error.message}`);
         }
         if (data) {
@@ -220,7 +221,7 @@ export function createTenantMembershipsRepository(
       if (client) {
         const { data, error } = await client.from('tenant_memberships').select('*').eq('user_id', userId);
         if (error) {
-          console.error('[Supabase Query Error] tenant_memberships:', error);
+          logger.error('[Supabase Query Error] tenant_memberships:', { service: "supabase-repo", error_category: "DATABASE_ERROR", data: { error: (error)?.message || String(error) } });
           throw new Error(`Supabase query failed on tenant_memberships: ${error.message}`);
         }
         if (data) return data;
@@ -233,7 +234,7 @@ export function createTenantMembershipsRepository(
       if (client) {
         const { data, error } = await client.from('tenant_memberships').select('*').eq('tenant_id', tenantId);
         if (error) {
-          console.error('[Supabase Query Error] tenant_memberships:', error);
+          logger.error('[Supabase Query Error] tenant_memberships:', { service: "supabase-repo", error_category: "DATABASE_ERROR", data: { error: (error)?.message || String(error) } });
           throw new Error(`Supabase query failed on tenant_memberships: ${error.message}`);
         }
         if (data) return data;
@@ -250,7 +251,7 @@ export function createTenantMembershipsRepository(
           .eq('tenant_id', tenantId)
           .eq('user_id', userId);
         if (error) {
-          console.error('[Supabase Delete Error] tenant_memberships:', error);
+          logger.error('[Supabase Delete Error] tenant_memberships:', { service: "supabase-repo", error_category: "DATABASE_ERROR", data: { error: (error)?.message || String(error) } });
           throw new Error(`Supabase delete failed on tenant_memberships: ${error.message}`);
         }
       }
@@ -280,7 +281,7 @@ export function createTenantApiKeysRepository(
       if (client) {
         const { data, error } = await client.from('tenant_api_keys').insert(record).select().single();
         if (error) {
-          console.error('[Supabase Insert Error] tenant_api_keys:', error);
+          logger.error('[Supabase Insert Error] tenant_api_keys:', { service: "supabase-repo", error_category: "DATABASE_ERROR", data: { error: (error)?.message || String(error) } });
           throw new Error(`Supabase insert failed on tenant_api_keys: ${error.message}`);
         }
         if (data) {
@@ -298,7 +299,7 @@ export function createTenantApiKeysRepository(
       if (client) {
         const { data, error } = await client.from('tenant_api_keys').select('*').eq('key_hash', keyHash).maybeSingle();
         if (error) {
-          console.error('[Supabase Query Error] tenant_api_keys:', error);
+          logger.error('[Supabase Query Error] tenant_api_keys:', { service: "supabase-repo", error_category: "DATABASE_ERROR", data: { error: (error)?.message || String(error) } });
           throw new Error(`Supabase query failed on tenant_api_keys: ${error.message}`);
         }
         if (data) {
@@ -315,7 +316,7 @@ export function createTenantApiKeysRepository(
       if (client) {
         const { data, error } = await client.from('tenant_api_keys').select('*').eq('tenant_id', tenantId);
         if (error) {
-          console.error('[Supabase Query Error] tenant_api_keys:', error);
+          logger.error('[Supabase Query Error] tenant_api_keys:', { service: "supabase-repo", error_category: "DATABASE_ERROR", data: { error: (error)?.message || String(error) } });
           throw new Error(`Supabase query failed on tenant_api_keys: ${error.message}`);
         }
         if (data) return data;
@@ -329,7 +330,7 @@ export function createTenantApiKeysRepository(
       if (client) {
         const { error } = await client.from('tenant_api_keys').update({ revoked_at: now }).eq('id', id);
         if (error) {
-          console.error('[Supabase Update Error] tenant_api_keys:', error);
+          logger.error('[Supabase Update Error] tenant_api_keys:', { service: "supabase-repo", error_category: "DATABASE_ERROR", data: { error: (error)?.message || String(error) } });
           throw new Error(`Supabase update failed on tenant_api_keys: ${error.message}`);
         }
       }
@@ -361,7 +362,7 @@ export function createWebhookEventsRepository(
             webhookEventsStore.set(event.event_id, event);
             return event;
           }
-          console.error('[Supabase Insert Error] webhook_events:', error);
+          logger.error('[Supabase Insert Error] webhook_events:', { service: "supabase-repo", error_category: "DATABASE_ERROR", data: { error: (error)?.message || String(error) } });
           throw new Error(`Supabase insert failed on webhook_events: ${error.message}`);
         }
         if (data) {

@@ -59,6 +59,7 @@ async function runPhase5bTests() {
   // Set mock provider for deterministic offline testing
   const mockProvider = new MockGeminiExtractionProvider();
   setGeminiExtractionProvider(mockProvider);
+  supabaseDataService.security.resetRateLimits?.();
 
   // --- SETUP BASELINE TEST LEADS & CALLS ---
   const lead1 = await supabaseDataService.leads.createLead({

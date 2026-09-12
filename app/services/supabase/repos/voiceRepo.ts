@@ -1,3 +1,4 @@
+import { logger } from "../../security/logger";
 /**
  * Tenant-Aware Voice Repositories: Call Transcripts, Conversation Extractions, and Buyer Qualifications
  */
@@ -201,16 +202,16 @@ export function createCallTranscriptsRepository(
           const { data, error } = await client.from('call_transcripts').insert(record).select().single();
           if (error) {
             if (error.code === 'PGRST205' || error.message?.includes('not find the table')) {
-              console.warn('[Supabase Fallback] call_transcripts table not found on remote; using in-memory store.');
+              logger.warn('[Supabase Fallback] call_transcripts table not found on remote; using in-memory store.', { service: "supabase-repo", error_category: "FALLBACK_WARNING" });
             } else {
-              console.error('[Supabase Insert Error] call_transcripts:', error);
+              logger.error('[Supabase Insert Error] call_transcripts:', { service: "supabase-repo", error_category: "DATABASE_ERROR", data: { error: (error)?.message || String(error) } });
             }
           } else if (data) {
             transcriptsStore.set(data.id, data);
             return data;
           }
         } catch (err) {
-          console.warn('[Supabase Insert Exception] call_transcripts fallback:', err);
+          logger.warn('[Supabase Insert Exception] call_transcripts fallback:', { service: "supabase-repo", error_category: "FALLBACK_WARNING", data: { error: (err)?.message || String(err) } });
         }
       }
 
@@ -380,10 +381,10 @@ export function createConversationExtractionsRepository(
             return data;
           }
           if (error) {
-            console.warn('[Supabase Insert Error] conversation_extractions fallback to in-memory:', error.message);
+            logger.warn('[Supabase Insert Error] conversation_extractions fallback to in-memory:', { service: "supabase-repo", error_category: "FALLBACK_WARNING", data: { error: (error.message)?.message || String(error.message) } });
           }
         } catch (err) {
-          console.warn('[Supabase Insert Exception] conversation_extractions fallback:', err);
+          logger.warn('[Supabase Insert Exception] conversation_extractions fallback:', { service: "supabase-repo", error_category: "FALLBACK_WARNING", data: { error: (err)?.message || String(err) } });
         }
       }
 
@@ -591,10 +592,10 @@ export function createBuyerQualificationsRepository(
             return data;
           }
           if (error) {
-            console.warn('[Supabase Insert Error] buyer_qualifications fallback to in-memory:', error.message);
+            logger.warn('[Supabase Insert Error] buyer_qualifications fallback to in-memory:', { service: "supabase-repo", error_category: "FALLBACK_WARNING", data: { error: (error.message)?.message || String(error.message) } });
           }
         } catch (err) {
-          console.warn('[Supabase Insert Exception] buyer_qualifications fallback:', err);
+          logger.warn('[Supabase Insert Exception] buyer_qualifications fallback:', { service: "supabase-repo", error_category: "FALLBACK_WARNING", data: { error: (err)?.message || String(err) } });
         }
       }
 

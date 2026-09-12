@@ -196,7 +196,7 @@ export const LeadImportView: React.FC<LeadImportViewProps> = ({
             {healthStatus?.mode === 'LIVE_SUPABASE' ? (
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-300 text-xs font-semibold shadow-xs">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
-                <span>Live Supabase PostgreSQL</span>
+                <span>Live Supabase Backend</span>
                 {healthStatus.urlHost && (
                   <span className="font-mono text-[11px] text-emerald-600 border-l border-emerald-200 pl-2">
                     {healthStatus.urlHost}
@@ -209,12 +209,12 @@ export const LeadImportView: React.FC<LeadImportViewProps> = ({
             ) : healthStatus?.mode === 'IN_MEMORY' ? (
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-300 text-xs font-semibold shadow-xs">
                 <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0"></span>
-                <span>Local Development Store (In-Memory Fallback)</span>
+                <span>Preview / Local Development Mode</span>
               </div>
             ) : (
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-rose-50 text-rose-800 border border-rose-300 text-xs font-semibold shadow-xs">
                 <span className="w-2 h-2 rounded-full bg-rose-500 shrink-0"></span>
-                <span>Supabase Disconnected / Error</span>
+                <span>Supabase Connection Error</span>
               </div>
             )}
 
@@ -272,8 +272,8 @@ export const LeadImportView: React.FC<LeadImportViewProps> = ({
         <div className="text-xs text-slate-300 grid grid-cols-1 md:grid-cols-2 gap-2 pt-2 border-t border-slate-800">
           <div>
             <span className="text-slate-400">Status: </span>
-            <span className={healthStatus?.isLive ? 'text-emerald-400 font-semibold' : 'text-amber-400 font-semibold'}>
-              {healthStatus?.displayName} ({healthStatus?.mode})
+            <span className={healthStatus?.isLive ? 'text-emerald-400 font-semibold' : healthStatus?.mode === 'IN_MEMORY' ? 'text-amber-400 font-semibold' : 'text-rose-400 font-semibold'}>
+              {healthStatus?.displayName}
             </span>
           </div>
           <div className="text-slate-400 md:text-right">
@@ -292,6 +292,13 @@ export const LeadImportView: React.FC<LeadImportViewProps> = ({
               • Service Role: omitted (client-safe)
             </span>
           </div>
+          {healthStatus?.message && (
+            <div className="col-span-full text-[11px] text-slate-400 pt-1.5 border-t border-slate-800/80">
+              <span className={healthStatus?.isLive ? 'text-emerald-300' : healthStatus?.mode === 'IN_MEMORY' ? 'text-slate-300' : 'text-rose-300'}>
+                {healthStatus.message}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Diagnostic Results Card */}
@@ -310,7 +317,7 @@ export const LeadImportView: React.FC<LeadImportViewProps> = ({
               <span className="text-[10px] text-slate-400">Tested at {diagnostic.testedAt}</span>
             </div>
             <div className="space-y-0.5 text-[11px]">
-              <div>• Mode: {diagnostic.result.isLiveSupabase ? 'Live Supabase' : 'Local Development Store'}</div>
+              <div>• Mode: {diagnostic.result.isLiveSupabase ? 'Live Supabase Backend' : 'Preview / Local Development Mode'}</div>
               <div>• Lead ID Created: {diagnostic.result.leadId}</div>
               <div>• Read-Back Integrity: {diagnostic.result.readBackMatched ? 'VERIFIED MATCH' : 'MISMATCH'}</div>
               <div>• Audit Event Appended: {diagnostic.result.auditEventLogged ? 'VERIFIED' : 'FAILED'}</div>
@@ -482,17 +489,17 @@ export const LeadImportView: React.FC<LeadImportViewProps> = ({
                 {healthStatus?.mode === 'LIVE_SUPABASE' ? (
                   <div className="flex items-center gap-1.5 text-emerald-700 font-semibold">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                    <span>Supabase PostgreSQL Synced</span>
+                    <span>Live Supabase Backend</span>
                   </div>
                 ) : healthStatus?.mode === 'IN_MEMORY' ? (
                   <div className="flex items-center gap-1.5 text-amber-700 font-semibold">
                     <AlertCircle className="w-4 h-4 text-amber-600" />
-                    <span>Local Development Store (Fallback)</span>
+                    <span>Preview / Local Development Mode</span>
                   </div>
                 ) : (
                   <div className="flex items-center gap-1.5 text-rose-700 font-semibold">
                     <AlertTriangle className="w-4 h-4 text-rose-600" />
-                    <span>Supabase Disconnected</span>
+                    <span>Supabase Connection Error</span>
                   </div>
                 )}
               </div>
