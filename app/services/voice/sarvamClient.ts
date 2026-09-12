@@ -245,10 +245,19 @@ export class SarvamClient {
     const hasCustomVariables = !!payload.customVariables && Object.keys(payload.customVariables).length > 0;
 
     // Determine webhook URL
-    const webhookUrl =
+    let webhookUrl =
       payload.webhookUrl ||
-      (process.env.APP_URL ? `${process.env.APP_URL}/api/voice/sarvam/webhook` : undefined) ||
-      'https://growthforge.local/api/voice/sarvam/webhook';
+      (process.env.APP_URL ? `${process.env.APP_URL}/api/voice/sarvam/webhook` : undefined);
+
+    if (!webhookUrl) {
+      if (process.env.NODE_ENV === 'production') {
+        throw new SarvamError(
+          SarvamErrorCode.CONFIG_ERROR,
+          'APP_URL must be configured in production to construct the voice callback webhook URL.'
+        );
+      }
+      webhookUrl = 'http://localhost:3000/api/voice/sarvam/webhook';
+    }
 
     // Build exact Instant Outbound Request Schema
     const requestBody: Record<string, any> = {

@@ -1109,31 +1109,31 @@ Buyer: My budget is between 1.5 to 2 Crores, looking to move in within 3 months.
   const skipInner = process.env.SKIP_INNER_RECURSION === 'true';
 
   await runTest('19. Regression: Phase 4A test passes', async () => {
-    if (!skipInner) execSync('./node_modules/.bin/tsx tests/call-eligibility-verification.ts', { stdio: 'pipe' });
+    if (!skipInner) execSync('./node_modules/.bin/tsx tests/call-eligibility-verification.ts', { stdio: 'pipe', env: { ...process.env, SKIP_INNER_RECURSION: 'true' } });
   });
 
   await runTest('20. Regression: Phase 4B test passes', async () => {
-    if (!skipInner) execSync('./node_modules/.bin/tsx tests/sarvam-unit-tests.ts', { stdio: 'pipe' });
+    if (!skipInner) execSync('./node_modules/.bin/tsx tests/sarvam-unit-tests.ts', { stdio: 'pipe', env: { ...process.env, SKIP_INNER_RECURSION: 'true' } });
   });
 
   await runTest('21. Regression: Phase 5A test passes', async () => {
-    if (!skipInner) execSync('./node_modules/.bin/tsx tests/phase5a-transcript-ingestion.ts', { stdio: 'pipe' });
+    if (!skipInner) execSync('./node_modules/.bin/tsx tests/phase5a-transcript-ingestion.ts', { stdio: 'pipe', env: { ...process.env, SKIP_INNER_RECURSION: 'true' } });
   });
 
   await runTest('22. Regression: Phase 5B test passes', async () => {
-    if (!skipInner) execSync('./node_modules/.bin/tsx tests/phase5b-gemini-extraction.ts', { stdio: 'pipe' });
+    if (!skipInner) execSync('./node_modules/.bin/tsx tests/phase5b-gemini-extraction.ts', { stdio: 'pipe', env: { ...process.env, SKIP_INNER_RECURSION: 'true' } });
   });
 
   await runTest('23. Regression: Phase 5C test passes', async () => {
-    if (!skipInner) execSync('./node_modules/.bin/tsx tests/phase5c-buyer-qualification.ts', { stdio: 'pipe' });
+    if (!skipInner) execSync('./node_modules/.bin/tsx tests/phase5c-buyer-qualification.ts', { stdio: 'pipe', env: { ...process.env, SKIP_INNER_RECURSION: 'true' } });
   });
 
   await runTest('24. Regression: Phase 5D test passes', async () => {
-    if (!skipInner) execSync('./node_modules/.bin/tsx tests/phase5d-buyer-scoring.ts', { stdio: 'pipe' });
+    if (!skipInner) execSync('./node_modules/.bin/tsx tests/phase5d-buyer-scoring.ts', { stdio: 'pipe', env: { ...process.env, SKIP_INNER_RECURSION: 'true' } });
   });
 
   await runTest('25. Regression: Phase 5E test passes', async () => {
-    if (!skipInner) execSync('./node_modules/.bin/tsx tests/phase5e-project-matching.ts', { stdio: 'pipe' });
+    if (!skipInner) execSync('./node_modules/.bin/tsx tests/phase5e-project-matching.ts', { stdio: 'pipe', env: { ...process.env, SKIP_INNER_RECURSION: 'true' } });
   });
 
   // Summary
@@ -1154,6 +1154,7 @@ Buyer: My budget is between 1.5 to 2 Crores, looking to move in within 3 months.
     process.exit(1);
   } else {
     console.log('\n🎉 ALL 25 PHASE 5F & REGRESSION TESTS PASSED PERFECTLY!');
+    process.exit(0);
   }
 }
 

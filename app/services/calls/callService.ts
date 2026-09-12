@@ -73,6 +73,12 @@ export class CallService {
       return sarvamVoiceProvider;
     }
 
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error(
+        'MockVoiceProvider is strictly forbidden in production. Configure SARVAM_API_KEY, credentials, and VOICE_MODE=REAL.'
+      );
+    }
+
     return mockVoiceProvider;
   }
 

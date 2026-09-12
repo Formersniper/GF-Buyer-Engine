@@ -24,16 +24,24 @@ const inFlightDispatches = new Set<string>();
 const completedDispatches = new Map<string, any>();
 const dispatchPromises = new Map<string, Promise<any>>();
 
+function parseBoundedInteger(val: string | undefined, defaultVal: number, min: number, max: number): number {
+  if (!val || val.trim() === '') return defaultVal;
+  const parsed = parseInt(val, 10);
+  if (isNaN(parsed) || parsed < min) return min;
+  if (parsed > max) return max;
+  return parsed;
+}
+
 export const costAndConcurrencyControl = {
   getLimits() {
     return {
-      maxSarvamHour: parseInt(process.env.MAX_SARVAM_CALLS_PER_TENANT_PER_HOUR || '25', 10),
-      maxSarvamDay: parseInt(process.env.MAX_SARVAM_CALLS_PER_TENANT_PER_DAY || '100', 10),
-      maxGeminiHour: parseInt(process.env.MAX_GEMINI_OPS_PER_TENANT_PER_HOUR || '200', 10),
-      maxEnrichmentHour: parseInt(process.env.MAX_ENRICHMENTS_PER_TENANT_PER_HOUR || '100', 10),
-      maxActiveSarvam: parseInt(process.env.MAX_ACTIVE_SARVAM_CALL_DISPATCHES || '10', 10),
-      maxActiveGemini: parseInt(process.env.MAX_ACTIVE_GEMINI_OPERATIONS || '5', 10),
-      maxActiveScout: parseInt(process.env.MAX_ACTIVE_SCOUT_OPERATIONS || '5', 10),
+      maxSarvamHour: parseBoundedInteger(process.env.MAX_SARVAM_CALLS_PER_TENANT_PER_HOUR, 25, 1, 10000),
+      maxSarvamDay: parseBoundedInteger(process.env.MAX_SARVAM_CALLS_PER_TENANT_PER_DAY, 100, 1, 50000),
+      maxGeminiHour: parseBoundedInteger(process.env.MAX_GEMINI_OPS_PER_TENANT_PER_HOUR, 200, 1, 50000),
+      maxEnrichmentHour: parseBoundedInteger(process.env.MAX_ENRICHMENTS_PER_TENANT_PER_HOUR, 100, 1, 50000),
+      maxActiveSarvam: parseBoundedInteger(process.env.MAX_ACTIVE_SARVAM_CALL_DISPATCHES, 10, 1, 1000),
+      maxActiveGemini: parseBoundedInteger(process.env.MAX_ACTIVE_GEMINI_OPERATIONS, 5, 1, 1000),
+      maxActiveScout: parseBoundedInteger(process.env.MAX_ACTIVE_SCOUT_OPERATIONS, 5, 1, 1000),
     };
   },
 

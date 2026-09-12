@@ -55,14 +55,14 @@ export function getSupabaseConfig(): SupabaseConfig {
   if ((!supabaseUrl || !supabaseKey) && typeof process !== 'undefined' && process.env) {
     supabaseUrl =
       supabaseUrl ||
-      process.env.VITE_SUPABASE_URL ||
       process.env.SUPABASE_URL ||
+      process.env.VITE_SUPABASE_URL ||
       null;
 
     supabaseKey =
       supabaseKey ||
-      process.env.VITE_SUPABASE_ANON_KEY ||
       process.env.SUPABASE_ANON_KEY ||
+      process.env.VITE_SUPABASE_ANON_KEY ||
       null;
   }
 
@@ -165,6 +165,17 @@ export async function checkPersistenceHealth(): Promise<PersistenceHealthStatus>
   };
 
   if (!url || !key) {
+    if (process.env.NODE_ENV === 'production') {
+      return {
+        mode: 'DISCONNECTED',
+        displayName: 'Supabase Credentials Missing',
+        urlHost: null,
+        isLive: false,
+        message: 'Supabase credentials are not configured in production environment. In-memory mode is prohibited.',
+        lastChecked: now,
+        safeDiagnostics,
+      };
+    }
     return {
       mode: 'IN_MEMORY',
       displayName: 'Preview / Local Development Mode',

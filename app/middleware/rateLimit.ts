@@ -15,10 +15,13 @@ export function rateLimit(operation: string, maxRequests: number, windowSeconds:
       // Since requireAuth middleware runs before this for protected routes, req.user will be populated.
       // We will assume req.user is set by requireAuth.
       
+      const auth = (req as any).auth;
       const user = (req as any).user;
       let targetId = 'global';
       
-      if (user && user.tenant_id) {
+      if (auth && auth.tenantId) {
+        targetId = auth.tenantId;
+      } else if (user && user.tenant_id) {
         targetId = user.tenant_id;
       } else {
         // Fallback to IP address if unauthenticated

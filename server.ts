@@ -5,6 +5,8 @@ import { createServer as createViteServer } from 'vite';
 import { requireAuth, requireRole } from './app/middleware/auth';
 import { rateLimit } from './app/middleware/rateLimit';
 import { correlationMiddleware, sanitizedErrorHandler } from './app/middleware/correlation';
+import { securityHeaders, corsMiddleware } from './app/middleware/securityHeaders';
+import { enforceProductionConfig, getStartupHealthStatus } from './app/config/productionConfig';
 import { logger } from './app/services/security/logger';
 import { callService } from './app/services/calls/callService';
 import { processSarvamWebhook } from './app/services/voice/sarvamWebhook';
@@ -19,7 +21,16 @@ import { brokerHandoffService } from './app/services/handoff/brokerHandoffServic
 import { matchingAgent } from './app/agents/MatchingAgent';
 
 export function createApp(): Express {
+  // If in production, fail-fast validate configuration immediately
+  if (process.env.NODE_ENV === 'production') {
+    enforceProductionConfig();
+  }
+
   const app = express();
+
+  // Security headers & CORS boundaries
+  app.use(securityHeaders());
+  app.use(corsMiddleware());
 
   // JSON body parser
   app.use(express.json());
@@ -29,9 +40,15 @@ export function createApp(): Express {
 
   // --- PUBLIC API ROUTES ---
 
-  // Health check
+  // Minimal public health check
   app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', service: 'GrowthForge Buyer Engine', timestamp: new Date().toISOString() });
+  });
+
+  // Authenticated operational diagnostics endpoint (Requires Admin or Platform Admin)
+  app.get('/api/health/diagnostics', requireAuth(), requireRole('ADMIN', 'OWNER', 'PLATFORM_ADMIN'), (req, res) => {
+    const diagnostics = getStartupHealthStatus();
+    res.json(diagnostics);
   });
 
   // Voice Provider Health (Safe, never leaks keys)
