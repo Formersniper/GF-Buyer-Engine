@@ -4,14 +4,14 @@
 
 import { BuyerProfile, BuyerPreference } from '../../../schemas/database';
 import { getSupabaseClient } from '../client';
-import {
+import { 
   TenantScope,
   TenantContext,
   resolveEffectiveTenantScope,
   parseScopeAndId,
   generateUUID,
   TenantMismatchError,
-} from './helpers';
+  } from './helpers';
 import { LeadsRepository } from './leadsRepo';
 
 export interface BuyerProfilesRepository {

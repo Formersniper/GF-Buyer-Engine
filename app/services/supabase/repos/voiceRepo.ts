@@ -9,14 +9,14 @@ import {
   BuyerQualification,
 } from '../../../schemas/database';
 import { getSupabaseClient } from '../client';
-import {
+import { 
   TenantScope,
   TenantContext,
   resolveEffectiveTenantScope,
   parseScopeAndId,
   generateUUID,
   TenantMismatchError,
-} from './helpers';
+  } from './helpers';
 import { LeadsRepository } from './leadsRepo';
 import { CallsRepository } from './callsRepo';
 
@@ -228,9 +228,7 @@ export function createCallTranscriptsRepository(
           }
           const { data, error } = await query.maybeSingle();
           if (!error && data) return data;
-        } catch {
-          // ignore and fallback
-        }
+        } catch { /* ignore and fallback */ }
       }
       const t = transcriptsStore.get(id) || null;
       if (!t) return null;
@@ -251,9 +249,7 @@ export function createCallTranscriptsRepository(
           }
           const { data, error } = await query.maybeSingle();
           if (!error && data) return data;
-        } catch {
-          // ignore and fallback
-        }
+        } catch { /* ignore and fallback */ }
       }
       for (const t of transcriptsStore.values()) {
         if (t.call_id === callId) {
@@ -280,9 +276,7 @@ export function createCallTranscriptsRepository(
           }
           const { data, error } = await query.order('created_at', { ascending: false }).limit(1);
           if (!error && data && data.length > 0) return data[0];
-        } catch {
-          // ignore and fallback
-        }
+        } catch { /* ignore and fallback */ }
       }
       for (const t of transcriptsStore.values()) {
         if (t.provider_call_id === providerCallId) {
@@ -309,9 +303,7 @@ export function createCallTranscriptsRepository(
           }
           const { data, error } = await query.order('created_at', { ascending: true });
           if (!error && data) return data;
-        } catch {
-          // ignore and fallback
-        }
+        } catch { /* ignore and fallback */ }
       }
       return Array.from(transcriptsStore.values()).filter((t) => {
         if (t.lead_id !== leadId) return false;
@@ -409,9 +401,7 @@ export function createConversationExtractionsRepository(
           }
           const { data, error } = await query.maybeSingle();
           if (!error && data) return data;
-        } catch {
-          // ignore and fallback
-        }
+        } catch { /* ignore and fallback */ }
       }
       const e = extractionsStore.get(id) || null;
       if (!e) return null;
@@ -427,11 +417,7 @@ export function createConversationExtractionsRepository(
       let schemaVersion: string | undefined;
       let promptVersion: string | undefined;
 
-      if (
-        typeof scopeOrTranscriptId === 'object' ||
-        (maybeSchema !== undefined) ||
-        (typeof scopeOrTranscriptId === 'string' && transcriptIdOrSchema !== undefined && !transcriptIdOrSchema.startsWith('1.') && !transcriptIdOrSchema.startsWith('2.') && !transcriptIdOrSchema.startsWith('v'))
-      ) {
+      if (typeof scopeOrTranscriptId === 'object') {
         scope = resolveEffectiveTenantScope(scopeOrTranscriptId as TenantScope);
         transcriptId = transcriptIdOrSchema as string;
         schemaVersion = maybeSchema;
@@ -458,9 +444,7 @@ export function createConversationExtractionsRepository(
           }
           const { data, error } = await query.order('created_at', { ascending: false }).limit(1);
           if (!error && data && data.length > 0) return data[0];
-        } catch {
-          // ignore and fallback
-        }
+        } catch { /* ignore and fallback */ }
       }
       return (
         Array.from(extractionsStore.values())
@@ -489,9 +473,7 @@ export function createConversationExtractionsRepository(
           }
           const { data, error } = await query.order('created_at', { ascending: false }).limit(1);
           if (!error && data && data.length > 0) return data[0];
-        } catch {
-          // ignore and fallback
-        }
+        } catch { /* ignore and fallback */ }
       }
       return (
         Array.from(extractionsStore.values())
@@ -518,9 +500,7 @@ export function createConversationExtractionsRepository(
           }
           const { data, error } = await query.order('created_at', { ascending: true });
           if (!error && data) return data;
-        } catch {
-          // ignore and fallback
-        }
+        } catch { /* ignore and fallback */ }
       }
       return Array.from(extractionsStore.values()).filter((e) => {
         if (e.lead_id !== leadId) return false;
@@ -613,9 +593,7 @@ export function createBuyerQualificationsRepository(
           }
           const { data, error } = await query.maybeSingle();
           if (!error && data) return data;
-        } catch {
-          // ignore and fallback
-        }
+        } catch { /* ignore and fallback */ }
       }
       const q = qualificationsStore.get(id) || null;
       if (!q) return null;
@@ -656,9 +634,7 @@ export function createBuyerQualificationsRepository(
           }
           const { data, error } = await query.order('created_at', { ascending: false }).limit(1);
           if (!error && data && data.length > 0) return data[0];
-        } catch {
-          // ignore and fallback
-        }
+        } catch { /* ignore and fallback */ }
       }
       return (
         Array.from(qualificationsStore.values())
@@ -686,9 +662,7 @@ export function createBuyerQualificationsRepository(
           }
           const { data, error } = await query.order('created_at', { ascending: true });
           if (!error && data) return data;
-        } catch {
-          // ignore and fallback
-        }
+        } catch { /* ignore and fallback */ }
       }
       return Array.from(qualificationsStore.values()).filter((q) => {
         if (q.lead_id !== leadId) return false;

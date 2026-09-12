@@ -6,6 +6,7 @@
  */
 
 import { GoogleGenAI, Type } from '@google/genai';
+import { ExternalProviderError, ExternalProviderErrorType, withRetry, withTimeout } from '../errors';
 import {
   ExtractedBuyerIntelligence,
   EXTRACTION_PROMPT_VERSION,
@@ -48,7 +49,7 @@ export class RealGeminiExtractionProvider implements GeminiExtractionProvider {
   private getClient(): GoogleGenAI {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      throw new Error('GEMINI_API_KEY environment variable is required for RealGeminiExtractionProvider');
+      throw new ExternalProviderError('Gemini', ExternalProviderErrorType.CONFIGURATION, 'GEMINI_API_KEY environment variable is required');
     }
     return new GoogleGenAI({
       apiKey,
@@ -591,10 +592,14 @@ export class MockGeminiExtractionProvider implements GeminiExtractionProvider {
 }
 
 // Global active provider reference
-let activeExtractionProvider: GeminiExtractionProvider =
-  process.env.NODE_ENV === 'test' || !process.env.GEMINI_API_KEY
+let activeExtractionProvider: GeminiExtractionProvider;
+if (process.env.NODE_ENV === 'production') {
+  activeExtractionProvider = new RealGeminiExtractionProvider();
+} else {
+  activeExtractionProvider = process.env.NODE_ENV === 'test' || !process.env.GEMINI_API_KEY
     ? new MockGeminiExtractionProvider()
     : new RealGeminiExtractionProvider();
+}
 
 export function getGeminiExtractionProvider(): GeminiExtractionProvider {
   return activeExtractionProvider;

@@ -111,11 +111,40 @@ export function getSupabaseClient(): SupabaseClient | null {
   return cachedClient;
 }
 
+let cachedAdminClient: SupabaseClient | null = null;
+
+/**
+ * Returns a Supabase client configured with the service_role key for backend bypass operations.
+ * Returns null if SUPABASE_SERVICE_ROLE_KEY is missing.
+ */
+export function getSupabaseAdminClient(): SupabaseClient | null {
+  if (cachedAdminClient) {
+    return cachedAdminClient;
+  }
+
+  const { url } = getSupabaseConfig();
+  const serviceRoleKey = typeof process !== 'undefined' ? process.env.SUPABASE_SERVICE_ROLE_KEY : null;
+
+  if (!url || !serviceRoleKey) {
+    return null;
+  }
+
+  cachedAdminClient = createClient(url, serviceRoleKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  });
+
+  return cachedAdminClient;
+}
+
 /**
  * Resets cached Supabase client (useful in testing or dynamic config changes)
  */
 export function resetSupabaseClient(): void {
   cachedClient = null;
+  cachedAdminClient = null;
 }
 
 /**

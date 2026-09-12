@@ -3,8 +3,8 @@
  */
 
 import { Tenant, TenantMembership, TenantApiKey, WebhookEvent } from '../../../schemas/tenant';
-import { getSupabaseClient } from '../client';
-import { generateUUID } from './helpers';
+import { getSupabaseClient, getSupabaseAdminClient } from '../client';
+import {  generateUUID   } from './helpers';
 
 export interface TenantsRepository {
   createTenant(tenant: Omit<Tenant, 'id' | 'created_at' | 'updated_at'> & { id?: string }): Promise<Tenant>;
@@ -349,7 +349,7 @@ export function createWebhookEventsRepository(
 ): WebhookEventsRepository {
   return {
     recordEvent: async (event: WebhookEvent) => {
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         const { data, error } = await client.from('webhook_events').insert(event).select().single();
         if (error) {
@@ -377,7 +377,7 @@ export function createWebhookEventsRepository(
     },
 
     getEvent: async (eventId: string) => {
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         try {
           const { data, error } = await client.from('webhook_events').select('*').eq('event_id', eventId).maybeSingle();
@@ -404,7 +404,7 @@ export function createWebhookEventsRepository(
         processed_at: processedAt || new Date().toISOString(),
       };
 
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         try {
           const { data, error } = await client.from('webhook_events').update(updated).eq('event_id', eventId).select().single();

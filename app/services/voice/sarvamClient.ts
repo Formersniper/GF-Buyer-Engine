@@ -31,6 +31,7 @@ export interface SarvamOutboundPayload {
   systemPrompt?: string;
   initialMessage?: string;
   webhookUrl?: string;
+  idempotencyKey?: string;
   customVariables?: Record<string, string>;
   orgId?: string;
   workspaceId?: string;
@@ -120,9 +121,10 @@ export class SarvamClient {
   /**
    * Builds standardized headers for Sarvam API requests using X-API-Key.
    */
-  private getHeaders(): Record<string, string> {
+  private getHeaders(idempotencyKey?: string): Record<string, string> {
     return {
       'Content-Type': 'application/json',
+      ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey, 'X-Idempotency-Key': idempotencyKey } : {}),
       'X-API-Key': this.apiKey,
       'api-subscription-key': this.apiKey,
       Authorization: `Bearer ${this.apiKey}`,
@@ -279,7 +281,7 @@ export class SarvamClient {
     try {
       const response = await fetch(endpointUrl, {
         method: 'POST',
-        headers: this.getHeaders(),
+        headers: this.getHeaders(payload.idempotencyKey || `sv-out-${Date.now()}`),
         body: JSON.stringify(requestBody),
         signal: controller.signal,
       });

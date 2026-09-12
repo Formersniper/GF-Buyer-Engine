@@ -10,7 +10,7 @@ import {
   HandoffQueueItem,
 } from '../../../schemas/database';
 import { getSupabaseClient } from '../client';
-import {
+import { 
   TenantScope,
   TenantContext,
   ResolvedTenantScope,
@@ -19,7 +19,7 @@ import {
   parseScopeAndFilter,
   generateUUID,
   TenantMismatchError,
-} from './helpers';
+  } from './helpers';
 import { LeadsRepository } from './leadsRepo';
 
 export interface BrokerHandoffRepository {

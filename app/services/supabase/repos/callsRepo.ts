@@ -4,14 +4,14 @@
 
 import { Call } from '../../../schemas/database';
 import { getSupabaseClient } from '../client';
-import {
+import { 
   TenantScope,
   TenantContext,
   resolveEffectiveTenantScope,
   parseScopeAndId,
   generateUUID,
   TenantMismatchError,
-} from './helpers';
+  } from './helpers';
 import { LeadsRepository } from './leadsRepo';
 
 export interface CallsRepository {
@@ -129,8 +129,7 @@ export function createCallsRepository(
         }
       }
 
-      const match =
-        callsStore.get(idOrProviderCallId) ||
+      const match = callsStore.get(idOrProviderCallId) ||
         Array.from(callsStore.values()).find((c) => c.provider_call_id === idOrProviderCallId) ||
         null;
 

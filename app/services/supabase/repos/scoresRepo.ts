@@ -4,7 +4,7 @@
 
 import { BuyerScore, BuyerScoreRecord, PriorityQueueItem } from '../../../schemas/database';
 import { getSupabaseClient } from '../client';
-import {
+import { 
   TenantScope,
   TenantContext,
   resolveEffectiveTenantScope,
@@ -12,7 +12,7 @@ import {
   parseScopeAndFilter,
   generateUUID,
   TenantMismatchError,
-} from './helpers';
+  } from './helpers';
 import { LeadsRepository } from './leadsRepo';
 import { BuyerProfilesRepository } from './profilesRepo';
 import { BuyerQualificationsRepository } from './voiceRepo';

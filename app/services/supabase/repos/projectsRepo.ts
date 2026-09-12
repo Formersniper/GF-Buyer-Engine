@@ -4,7 +4,7 @@
 
 import { DbProject, DbProjectMatch } from '../../../schemas/database';
 import { getSupabaseClient } from '../client';
-import {
+import { 
   TenantScope,
   TenantContext,
   resolveEffectiveTenantScope,
@@ -12,7 +12,7 @@ import {
   parseScopeAndFilter,
   generateUUID,
   TenantMismatchError,
-} from './helpers';
+  } from './helpers';
 import { LeadsRepository } from './leadsRepo';
 
 export interface ProjectsRepository {
@@ -82,7 +82,6 @@ export function createProjectsRepository(
           const { data, error } = await client.from('projects').insert(record).select().single();
           if (error) {
             if (error.code === 'PGRST204' || error.code === 'PGRST205' || error.message?.includes('schema cache') || error.message?.includes('not find the')) {
-              console.warn(`[Supabase Fallback] Schema cache pending on projects (${error.message}). Using local store.`);
               projectsStore.set(record.id, record);
               return record;
             }

@@ -12,6 +12,7 @@
 import { supabaseDataService } from '../supabase/repositories';
 import { VoiceCallRequest, VoiceCallResult, VoiceCallStatus, IVoiceProvider, ProviderHealthResult } from './voiceProvider';
 import { SarvamClient, sarvamClient } from './sarvamClient';
+import { withRetry, withTimeout } from '../errors';
 import { buildSarvamSystemPrompt, buildSarvamInitialGreeting } from './sarvamPrompt';
 import { SarvamError, SarvamErrorCode } from './sarvamErrors';
 

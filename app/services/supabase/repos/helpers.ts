@@ -73,3 +73,11 @@ export function generateUUID(): string {
     return v.toString(16);
   });
 }
+
+export function checkProductionFallback(operation: string, error?: any): void {
+  if (process.env.NODE_ENV === 'production') {
+    const msg = `[Supabase Fallback Error] in-memory fallback is disabled in production for: ${operation}. ${error ? error.message : 'Missing client or connection.'}`;
+    console.error(msg, error);
+    throw new Error(msg);
+  }
+}

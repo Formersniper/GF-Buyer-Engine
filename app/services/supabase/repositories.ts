@@ -145,26 +145,63 @@ export type {
 // CENTRAL SUPABASE DATA SERVICE
 // ==========================================
 
+
+class FallbackSafeMap<K, V> extends Map<K, V> {
+  private assertSafe() {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('[Supabase Fallback] In-memory persistence fallback is strictly disabled in production.');
+    }
+  }
+  set(key: K, value: V): this {
+    this.assertSafe();
+    return super.set(key, value);
+  }
+  get(key: K): V | undefined {
+    this.assertSafe();
+    return super.get(key);
+  }
+  values(): IterableIterator<V> {
+    this.assertSafe();
+    return super.values();
+  }
+  keys(): IterableIterator<K> {
+    this.assertSafe();
+    return super.keys();
+  }
+  has(key: K): boolean {
+    this.assertSafe();
+    return super.has(key);
+  }
+  delete(key: K): boolean {
+    this.assertSafe();
+    return super.delete(key);
+  }
+  clear(): void {
+    this.assertSafe();
+    super.clear();
+  }
+}
+
 export class SupabaseDataService {
   // In-memory data stores (fallback & local dev)
-  private leadsStore: Map<string, Lead> = new Map();
-  private enrichmentStore: Map<string, LeadEnrichment[]> = new Map();
-  private callsStore: Map<string, Call> = new Map();
-  private transcriptsStore: Map<string, CallTranscript> = new Map();
-  private extractionsStore: Map<string, ConversationExtraction> = new Map();
-  private qualificationsStore: Map<string, BuyerQualification> = new Map();
-  private buyerProfilesStore: Map<string, BuyerProfile> = new Map();
-  private buyerPreferencesStore: Map<string, BuyerPreference[]> = new Map();
-  private projectsStore: Map<string, DbProject> = new Map();
-  private projectMatchesStore: Map<string, DbProjectMatch[]> = new Map();
-  private buyerScoresStore: Map<string, BuyerScore[]> = new Map();
-  private buyerScoreRecordsStore: Map<string, BuyerScoreRecord> = new Map();
-  private brokerHandoffsStore: Map<string, DbBrokerHandoff> = new Map();
-  private leadEventsStore: Map<string, LeadEvent[]> = new Map();
-  private tenantsStore: Map<string, Tenant> = new Map();
-  private membershipsStore: Map<string, TenantMembership> = new Map();
-  private apiKeysStore: Map<string, TenantApiKey> = new Map();
-  private webhookEventsStore: Map<string, WebhookEvent> = new Map();
+  private leadsStore: Map<string, Lead> = new FallbackSafeMap();
+  private enrichmentStore: Map<string, LeadEnrichment[]> = new FallbackSafeMap();
+  private callsStore: Map<string, Call> = new FallbackSafeMap();
+  private transcriptsStore: Map<string, CallTranscript> = new FallbackSafeMap();
+  private extractionsStore: Map<string, ConversationExtraction> = new FallbackSafeMap();
+  private qualificationsStore: Map<string, BuyerQualification> = new FallbackSafeMap();
+  private buyerProfilesStore: Map<string, BuyerProfile> = new FallbackSafeMap();
+  private buyerPreferencesStore: Map<string, BuyerPreference[]> = new FallbackSafeMap();
+  private projectsStore: Map<string, DbProject> = new FallbackSafeMap();
+  private projectMatchesStore: Map<string, DbProjectMatch[]> = new FallbackSafeMap();
+  private buyerScoresStore: Map<string, BuyerScore[]> = new FallbackSafeMap();
+  private buyerScoreRecordsStore: Map<string, BuyerScoreRecord> = new FallbackSafeMap();
+  private brokerHandoffsStore: Map<string, DbBrokerHandoff> = new FallbackSafeMap();
+  private leadEventsStore: Map<string, LeadEvent[]> = new FallbackSafeMap();
+  private tenantsStore: Map<string, Tenant> = new FallbackSafeMap();
+  private membershipsStore: Map<string, TenantMembership> = new FallbackSafeMap();
+  private apiKeysStore: Map<string, TenantApiKey> = new FallbackSafeMap();
+  private webhookEventsStore: Map<string, WebhookEvent> = new FallbackSafeMap();
 
   // Public typed repositories
   public readonly leads: LeadsRepository;
@@ -214,6 +251,7 @@ export class SupabaseDataService {
   }
 
   private seedDefaultData(): void {
+    if (process.env.NODE_ENV === 'production') return;
     // Seed default tenant
     this.tenantsStore.set(DEFAULT_TENANT_ID, {
       ...DEFAULT_TENANT,
