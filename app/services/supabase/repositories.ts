@@ -1,3 +1,4 @@
+import { createSecurityRepository, SecurityRepository } from './repos/securityRepo';
 /**
  * GrowthForge Buyer Intelligence Engine - Authoritative Supabase Repositories
  *
@@ -221,6 +222,12 @@ export class SupabaseDataService {
   public readonly tenantMemberships: TenantMembershipsRepository;
   public readonly tenantApiKeys: TenantApiKeysRepository;
   public readonly webhookEvents: WebhookEventsRepository;
+      
+  private securityLocksStore = new FallbackSafeMap<string, any>();
+  private securityRateLimitsStore = new FallbackSafeMap<string, any>();
+  private securityIdempotencyStore = new FallbackSafeMap<string, any>();
+
+  public readonly security: SecurityRepository;
 
   constructor() {
     this.seedDefaultData();
@@ -248,6 +255,7 @@ export class SupabaseDataService {
     this.tenantMemberships = createTenantMembershipsRepository(this.membershipsStore);
     this.tenantApiKeys = createTenantApiKeysRepository(this.apiKeysStore);
     this.webhookEvents = createWebhookEventsRepository(this.webhookEventsStore);
+    this.security = createSecurityRepository(this.securityLocksStore, this.securityRateLimitsStore, this.securityIdempotencyStore);
   }
 
   private seedDefaultData(): void {

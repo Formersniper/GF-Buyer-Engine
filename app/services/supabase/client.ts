@@ -42,8 +42,8 @@ export function getSupabaseConfig(): SupabaseConfig {
 
   // 1. Browser / Vite client environment (import.meta.env)
   try {
-    if (typeof import.meta !== 'undefined' && (import.meta as any).env) {
-      const metaEnv = (import.meta as any).env;
+    const metaEnv = typeof window !== 'undefined' ? (window as any).__VITE_ENV__ : undefined;
+    if (metaEnv) {
       supabaseUrl = metaEnv.VITE_SUPABASE_URL || metaEnv.SUPABASE_URL || null;
       supabaseKey = metaEnv.VITE_SUPABASE_ANON_KEY || metaEnv.SUPABASE_ANON_KEY || null;
     }

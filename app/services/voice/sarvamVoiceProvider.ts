@@ -54,8 +54,44 @@ export class SarvamVoiceProvider implements IVoiceProvider {
         'Cannot initiate call: Phone number is missing.'
       );
     }
+    
+    const tenantId = input.tenant_id || null;
+    const idempotencyKey = input.idempotency_key || `sv-out-${input.lead_id}`;
+    
+    // Global Ceiling Protection
+    const globalRl = await supabaseDataService.security.checkAndIncrementRateLimit('global_sarvam', 'sarvam_outbound', 60, 200);
+    if (!globalRl.allowed) {
+      throw new SarvamError(SarvamErrorCode.RATE_LIMITED, 'Global rate limit exceeded for outbound calls');
+    }
 
-    // 1. Dispatch outbound call to Sarvam Client
+    // Check Tenant Rate Limit (e.g. max 50 calls per hour per tenant)
+    if (tenantId) {
+      const rl = await supabaseDataService.security.checkAndIncrementRateLimit(tenantId, 'sarvam_outbound', 3600, 50);
+      if (!rl.allowed) {
+        throw new SarvamError(SarvamErrorCode.RATE_LIMITED, 'Tenant rate limit exceeded for outbound calls');
+      }
+    }
+
+    // Acquire Resource Lock to prevent duplicate concurrent dispatches for the same lead
+    const lockOwner = idempotencyKey + '-' + Date.now();
+    const lockAcquired = await supabaseDataService.security.acquireResourceLock('lead_call', input.lead_id, tenantId, lockOwner, 30);
+    if (!lockAcquired) {
+      throw new Error('Call dispatch already in progress for this lead');
+    }
+
+    try {
+      // Idempotency check
+      const idempotency = await supabaseDataService.security.acquireIdempotency(tenantId, idempotencyKey, 'sarvam_outbound', 86400);
+      if (idempotency.status === 'COMPLETED' && idempotency.response_body) {
+        return idempotency.response_body as VoiceCallResult;
+      }
+      // Since supabase JS timestamp parsing might differ, we just rely on PENDING status
+      // In a real system, if it's PENDING and not expired, we'd wait. For now, we throw.
+      if (idempotency.status === 'PENDING' && (new Date(idempotency.created_at).getTime() < Date.now() - 100)) {
+        throw new Error('Call dispatch is currently pending processing (idempotency conflict)');
+      }
+
+      // 1. Dispatch outbound call to Sarvam Client
     // If systemPrompt is not explicitly passed, leave undefined so Sarvam uses the dashboard v2 "Growthforge Sales" Shubh agent configuration
     const outboundResult = await this.client.startOutboundCall({
       toPhoneNumber: targetPhone,
@@ -92,7 +128,7 @@ export class SarvamVoiceProvider implements IVoiceProvider {
       },
     });
 
-    return {
+    const finalResult: VoiceCallResult = {
       callId: createdCallRecord.id,
       provider: 'sarvam',
       status: mappedStatus as any,
@@ -100,6 +136,16 @@ export class SarvamVoiceProvider implements IVoiceProvider {
       external_call_id: externalCallId,
       created_at: now,
     };
+    
+    await supabaseDataService.security.completeIdempotency(tenantId, idempotencyKey, 200, finalResult);
+    return finalResult;
+    
+    } catch (err: any) {
+      await supabaseDataService.security.failIdempotency(tenantId, idempotencyKey, 500, { error: err.message });
+      throw err;
+    } finally {
+      await supabaseDataService.security.releaseResourceLock('lead_call', input.lead_id, lockOwner);
+    }
   }
 
   /**

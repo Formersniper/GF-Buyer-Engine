@@ -30,6 +30,7 @@ import { mockVoiceProvider } from '../voice/mockVoiceProvider';
 import { sarvamVoiceProvider } from '../voice/sarvamVoiceProvider';
 
 export interface EvaluateCallEligibilityOptions {
+  idempotencyKey?: string;
   consentOverride?: string;
   actor?: 'system' | 'application_service' | 'human_operator';
 }
@@ -44,6 +45,7 @@ export interface CallEligibilityExecutionResult {
 }
 
 export interface StartCallOptions {
+  idempotencyKey?: string;
   provider?: IVoiceProvider;
   customVariables?: Record<string, string>;
   actor?: 'system' | 'application_service' | 'human_operator';
@@ -180,6 +182,8 @@ export class CallService {
     let mockCallResult: VoiceCallResult | undefined;
     if (eligibilityResult.decision === 'ELIGIBLE') {
       mockCallResult = await mockVoiceProvider.initiateCall({
+        idempotency_key: options?.idempotencyKey,
+        tenant_id: dbLead.tenant_id,
         lead_id: dbLead.id,
         phone_number: canonicalBefore.identity.phone,
         contact_name: canonicalBefore.identity.full_name || 'Valued Buyer',
@@ -264,6 +268,8 @@ export class CallService {
 
     // 4. Initiate Call via selected VoiceProvider
     const callResult = await provider.initiateCall({
+      idempotency_key: options?.idempotencyKey || `call-out-${dbLead.id}-${previousStatus}`,
+      tenant_id: dbLead.tenant_id,
       lead_id: dbLead.id,
       phone_number: targetPhone,
       contact_name: canonicalLead.identity.full_name || 'Valued Buyer',

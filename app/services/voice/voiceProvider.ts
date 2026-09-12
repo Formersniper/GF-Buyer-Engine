@@ -14,6 +14,8 @@ export interface VoiceCallRequest {
   call_script_id?: string;
   custom_variables?: Record<string, string>;
   system_prompt?: string;
+  idempotency_key?: string;
+  tenant_id?: string;
 }
 
 export type CallInitiationParams = VoiceCallRequest;

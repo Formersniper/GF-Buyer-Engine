@@ -112,6 +112,7 @@ export interface ConversationExtractionsRepository {
   ): Promise<ConversationExtraction | null>;
   getExtractionByCallId(scopeOrCallId: TenantScope | TenantContext | string, maybeCallId?: string): Promise<ConversationExtraction | null>;
   getExtractionsByLeadId(scopeOrLeadId: TenantScope | TenantContext | string, maybeLeadId?: string): Promise<ConversationExtraction[]>;
+  updateExtraction(id: string, extraction: Partial<ConversationExtraction>): Promise<ConversationExtraction>;
 }
 
 export interface BuyerQualificationsRepository {
@@ -388,6 +389,25 @@ export function createConversationExtractionsRepository(
 
       extractionsStore.set(record.id, record);
       return record;
+    },
+    updateExtraction: async (id, partialUpdate) => {
+      if (typeof window === 'undefined' && process.env.NODE_ENV === 'test') {
+        const existing = extractionsStore.get(id);
+        if (!existing) throw new Error('Not found in memory');
+        const updated = { ...existing, ...partialUpdate };
+        extractionsStore.set(id, updated);
+        return updated;
+      }
+      const supabase = getSupabaseClient();
+      if (!supabase) throw new Error('Supabase client not initialized');
+      const { data, error } = await supabase
+        .from('conversation_extractions')
+        .update(partialUpdate)
+        .eq('id', id)
+        .select()
+        .single();
+      if (error) throw new Error(`[Supabase Update Error] conversation_extractions: ${error.message}`);
+      return data;
     },
 
     getExtraction: async (scopeOrId, maybeId) => {

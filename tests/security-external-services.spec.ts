@@ -1,5 +1,4 @@
 // @ts-nocheck
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 vi.mock('../app/services/supabase/client', () => ({
   getSupabaseClient: () => null,

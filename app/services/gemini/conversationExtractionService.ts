@@ -200,13 +200,33 @@ export class ConversationExtractionService {
       });
 
       // 5. Execute Extraction via Provider Boundary
-      const provider = params.providerOverride || getGeminiExtractionProvider();
-      const extractionResponse = await provider.extractBuyerIntelligence({
-        transcriptText: transcript.transcript_text,
-        transcriptTurns: transcript.transcript_turns || undefined,
-        leadId: leadId,
-        language: transcript.language || undefined,
-      });
+      // 5a. Rate Limiting & Concurrency
+      const lead = await supabaseDataService.leads.getLead(leadId);
+      const tenantId = lead?.tenant_id || null;
+      if (tenantId) {
+        const rl = await supabaseDataService.security.checkAndIncrementRateLimit(tenantId, 'gemini_extraction', 3600, 100);
+        if (!rl.allowed) {
+          throw new Error('Tenant rate limit exceeded for Gemini extraction');
+        }
+      }
+      
+      const lockAcquired = await supabaseDataService.security.acquireResourceLock('lead_extraction', leadId, tenantId, 'geminiExtraction', 30);
+      if (!lockAcquired) {
+        throw new Error('Extraction already in progress for this lead');
+      }
+
+      let extractionResponse;
+      try {
+        const provider = params.providerOverride || getGeminiExtractionProvider();
+        extractionResponse = await provider.extractBuyerIntelligence({
+          transcriptText: transcript.transcript_text,
+          transcriptTurns: transcript.transcript_turns || undefined,
+          leadId: leadId,
+          language: transcript.language || undefined,
+        });
+      } finally {
+        await supabaseDataService.security.releaseResourceLock('lead_extraction', leadId, 'geminiExtraction');
+      }
 
       // 6. Schema Validation
       const validation = this.validateExtractedData(extractionResponse.extractedData);

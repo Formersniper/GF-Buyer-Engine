@@ -206,7 +206,25 @@ export class DefaultLeadService implements LeadService {
       email: dbLead.email || undefined,
     };
 
-    const enrichmentResult = await scoutAdapter.enrichLead(query);
+    const tenantId = dbLead.tenant_id || null;
+    if (tenantId) {
+      const rl = await supabaseDataService.security.checkAndIncrementRateLimit(tenantId, 'scout_enrichment', 3600, 100);
+      if (!rl.allowed) {
+        throw new Error('Tenant rate limit exceeded for lead enrichment');
+      }
+    }
+    
+    const lockAcquired = await supabaseDataService.security.acquireResourceLock('lead_enrichment', dbLead.id, tenantId, 'scoutAdapter', 60);
+    if (!lockAcquired) {
+      throw new Error('Enrichment already in progress for this lead');
+    }
+
+    let enrichmentResult;
+    try {
+      enrichmentResult = await scoutAdapter.enrichLead(query);
+    } finally {
+      await supabaseDataService.security.releaseResourceLock('lead_enrichment', dbLead.id, 'scoutAdapter');
+    }
 
     if (enrichmentResult.status === 'error') {
       await supabaseDataService.leadEvents.appendLeadEvent({

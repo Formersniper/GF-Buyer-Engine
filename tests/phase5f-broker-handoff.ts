@@ -50,6 +50,38 @@ interface TestResult {
   details?: unknown;
 }
 
+
+async function createSetupRecords(leadId: string, extId?: string) {
+  const call = await supabaseDataService.calls.createCall({
+    lead_id: leadId,
+    provider: 'sarvam',
+    provider_call_id: `call-${Date.now()}-${Math.floor(Math.random()*1000)}`,
+    status: 'COMPLETED',
+    duration_seconds: 120
+  });
+  
+  const tx = await supabaseDataService.transcripts.createTranscript({
+    lead_id: leadId,
+    call_id: call.id,
+    transcript_text: 'Dummy test text',
+    transcript_turns: [],
+    source: 'CALL_TRANSCRIPT'
+  });
+  
+  const ext = await supabaseDataService.extractions.createExtraction({
+    id: extId || crypto.randomUUID(),
+    lead_id: leadId,
+    call_id: call.id,
+    transcript_id: tx.id,
+    model: 'gemini-2.5-flash',
+    prompt_version: 'v1',
+    schema_version: 'v1',
+    extracted_data: {} as any
+  });
+  
+  return ext;
+}
+
 const results: TestResult[] = [];
 
 function assert(condition: boolean, message: string) {
@@ -86,9 +118,10 @@ async function runPhase5FTestSuite() {
       status: 'QUALIFIED',
     });
 
+    const setupExt = await createSetupRecords(lead.id);
     const qual = await supabaseDataService.qualifications.createQualification({
       lead_id: lead.id,
-      extraction_id: 'ext-hot-1',
+      extraction_id: setupExt.id,
       qualification_status: 'QUALIFIED',
       reason_codes: ['ACTIVE_INTENT_CONFIRMED', 'BUDGET_CONFIRMED'],
     });
@@ -96,7 +129,7 @@ async function runPhase5FTestSuite() {
     const score = await supabaseDataService.buyerScores.createBuyerScoreRecord({
       lead_id: lead.id,
       qualification_id: qual.id,
-      extraction_id: 'ext-hot-1',
+      extraction_id: setupExt.id,
       score: 94,
       composite_score: 94,
       total_score: 94,
@@ -148,9 +181,10 @@ async function runPhase5FTestSuite() {
       status: 'QUALIFIED',
     });
 
+    const setupExt = await createSetupRecords(lead.id);
     const qual = await supabaseDataService.qualifications.createQualification({
       lead_id: lead.id,
-      extraction_id: 'ext-warm-1',
+      extraction_id: setupExt.id,
       qualification_status: 'QUALIFIED',
       reason_codes: ['ACTIVE_INTENT_CONFIRMED'],
     });
@@ -158,7 +192,7 @@ async function runPhase5FTestSuite() {
     const score = await supabaseDataService.buyerScores.createBuyerScoreRecord({
       lead_id: lead.id,
       qualification_id: qual.id,
-      extraction_id: 'ext-warm-1',
+      extraction_id: setupExt.id,
       score: 78,
       composite_score: 78,
       total_score: 78,
@@ -209,9 +243,10 @@ async function runPhase5FTestSuite() {
       status: 'RAW',
     });
 
+    const setupExt = await createSetupRecords(lead.id);
     const qual = await supabaseDataService.qualifications.createQualification({
       lead_id: lead.id,
-      extraction_id: 'ext-nurture-1',
+      extraction_id: setupExt.id,
       qualification_status: 'QUALIFIED',
       reason_codes: ['ACTIVE_INTENT_CONFIRMED'],
     });
@@ -219,7 +254,7 @@ async function runPhase5FTestSuite() {
     const score = await supabaseDataService.buyerScores.createBuyerScoreRecord({
       lead_id: lead.id,
       qualification_id: qual.id,
-      extraction_id: 'ext-nurture-1',
+      extraction_id: setupExt.id,
       score: 52,
       composite_score: 52,
       total_score: 52,
@@ -269,9 +304,10 @@ async function runPhase5FTestSuite() {
       status: 'RAW',
     });
 
+    const setupExt = await createSetupRecords(lead.id);
     const qual = await supabaseDataService.qualifications.createQualification({
       lead_id: lead.id,
-      extraction_id: 'ext-rev-1',
+      extraction_id: setupExt.id,
       qualification_status: 'REQUIRES_REVIEW',
       reason_codes: ['CONTRADICTION_DETECTED'],
     });
@@ -279,7 +315,7 @@ async function runPhase5FTestSuite() {
     const score = await supabaseDataService.buyerScores.createBuyerScoreRecord({
       lead_id: lead.id,
       qualification_id: qual.id,
-      extraction_id: 'ext-rev-1',
+      extraction_id: setupExt.id,
       score: 45,
       composite_score: 45,
       total_score: 45,
@@ -331,16 +367,17 @@ async function runPhase5FTestSuite() {
       status: 'QUALIFIED',
     });
 
+    const setupExt = await createSetupRecords(lead.id);
     const qual = await supabaseDataService.qualifications.createQualification({
       lead_id: lead.id,
-      extraction_id: 'ext-nobudget-1',
+      extraction_id: setupExt.id,
       qualification_status: 'QUALIFIED',
     });
 
     const score = await supabaseDataService.buyerScores.createBuyerScoreRecord({
       lead_id: lead.id,
       qualification_id: qual.id,
-      extraction_id: 'ext-nobudget-1',
+      extraction_id: setupExt.id,
       score: 75,
       composite_score: 75,
       tier: 'TIER_2_WARM',
@@ -378,16 +415,17 @@ async function runPhase5FTestSuite() {
       status: 'QUALIFIED',
     });
 
+    const setupExt = await createSetupRecords(lead.id);
     const qual = await supabaseDataService.qualifications.createQualification({
       lead_id: lead.id,
-      extraction_id: 'ext-nofin-1',
+      extraction_id: setupExt.id,
       qualification_status: 'QUALIFIED',
     });
 
     const score = await supabaseDataService.buyerScores.createBuyerScoreRecord({
       lead_id: lead.id,
       qualification_id: qual.id,
-      extraction_id: 'ext-nofin-1',
+      extraction_id: setupExt.id,
       score: 82,
       tier: 'TIER_2_WARM',
       score_band: 'WARM',
@@ -416,16 +454,17 @@ async function runPhase5FTestSuite() {
       status: 'QUALIFIED',
     });
 
+    const setupExt = await createSetupRecords(lead.id);
     const qual = await supabaseDataService.qualifications.createQualification({
       lead_id: lead.id,
-      extraction_id: 'ext-nodec-1',
+      extraction_id: setupExt.id,
       qualification_status: 'QUALIFIED',
     });
 
     const score = await supabaseDataService.buyerScores.createBuyerScoreRecord({
       lead_id: lead.id,
       qualification_id: qual.id,
-      extraction_id: 'ext-nodec-1',
+      extraction_id: setupExt.id,
       score: 72,
       tier: 'TIER_2_WARM',
       score_band: 'WARM',
@@ -532,32 +571,25 @@ async function runPhase5FTestSuite() {
       status: 'QUALIFIED',
     });
 
+    const setupExt = await createSetupRecords(lead.id);
     const qual = await supabaseDataService.qualifications.createQualification({
       lead_id: lead.id,
-      extraction_id: 'ext-comm-1',
+      extraction_id: setupExt.id,
       qualification_status: 'QUALIFIED',
     });
 
-    await supabaseDataService.extractions.createExtraction({
-      id: 'ext-comm-1',
-      lead_id: lead.id,
-      call_id: 'call-comm-1',
-      transcript_id: 'tr-comm-1',
-      model: 'gemini-2.5-flash',
-      extraction_status: 'SUCCESS',
-      extracted_data: {
+    await supabaseDataService.extractions.updateExtraction(setupExt.id, { extracted_data: {
         primary_property_type: { value: 'Villa' },
         primary_configuration: { value: '4BHK' },
         preferred_locations: { value: ['Indiranagar'] },
         budget: { min: 40000000, max: 60000000, currency: 'INR' },
         timeline: { value: 'Immediate' },
-      } as any,
-    });
+      } as any });
 
     const score = await supabaseDataService.buyerScores.createBuyerScoreRecord({
       lead_id: lead.id,
       qualification_id: qual.id,
-      extraction_id: 'ext-comm-1',
+      extraction_id: setupExt.id,
       score: 95,
       tier: 'TIER_1_HOT',
       score_band: 'HOT',
@@ -590,16 +622,17 @@ async function runPhase5FTestSuite() {
       status: 'QUALIFIED',
     });
 
+    const setupExt = await createSetupRecords(lead.id);
     const qual = await supabaseDataService.qualifications.createQualification({
       lead_id: lead.id,
-      extraction_id: 'ext-idem-1',
+      extraction_id: setupExt.id,
       qualification_status: 'QUALIFIED',
     });
 
     const score = await supabaseDataService.buyerScores.createBuyerScoreRecord({
       lead_id: lead.id,
       qualification_id: qual.id,
-      extraction_id: 'ext-idem-1',
+      extraction_id: setupExt.id,
       score: 85,
       tier: 'TIER_2_WARM',
       score_band: 'WARM',
@@ -634,16 +667,17 @@ async function runPhase5FTestSuite() {
       status: 'QUALIFIED',
     });
 
+    const setupExt = await createSetupRecords(lead.id);
     const qual = await supabaseDataService.qualifications.createQualification({
       lead_id: lead.id,
-      extraction_id: 'ext-disp-1',
+      extraction_id: setupExt.id,
       qualification_status: 'QUALIFIED',
     });
 
     const score = await supabaseDataService.buyerScores.createBuyerScoreRecord({
       lead_id: lead.id,
       qualification_id: qual.id,
-      extraction_id: 'ext-disp-1',
+      extraction_id: setupExt.id,
       score: 96,
       tier: 'TIER_1_HOT',
       score_band: 'HOT',
@@ -678,16 +712,17 @@ async function runPhase5FTestSuite() {
       status: 'QUALIFIED',
     });
 
+    const setupExt = await createSetupRecords(lead.id);
     const qual = await supabaseDataService.qualifications.createQualification({
       lead_id: lead.id,
-      extraction_id: 'ext-dispidem-1',
+      extraction_id: setupExt.id,
       qualification_status: 'QUALIFIED',
     });
 
     const score = await supabaseDataService.buyerScores.createBuyerScoreRecord({
       lead_id: lead.id,
       qualification_id: qual.id,
-      extraction_id: 'ext-dispidem-1',
+      extraction_id: setupExt.id,
       score: 91,
       tier: 'TIER_1_HOT',
       score_band: 'HOT',
@@ -717,16 +752,17 @@ async function runPhase5FTestSuite() {
       status: 'QUALIFIED',
     });
 
+    const setupExt = await createSetupRecords(lead.id);
     const qual = await supabaseDataService.qualifications.createQualification({
       lead_id: lead.id,
-      extraction_id: 'ext-ack-1',
+      extraction_id: setupExt.id,
       qualification_status: 'QUALIFIED',
     });
 
     const score = await supabaseDataService.buyerScores.createBuyerScoreRecord({
       lead_id: lead.id,
       qualification_id: qual.id,
-      extraction_id: 'ext-ack-1',
+      extraction_id: setupExt.id,
       score: 87,
       tier: 'TIER_2_WARM',
       score_band: 'WARM',
@@ -762,16 +798,17 @@ async function runPhase5FTestSuite() {
       status: 'QUALIFIED',
     });
 
+    const setupExt = await createSetupRecords(lead.id);
     const qual = await supabaseDataService.qualifications.createQualification({
       lead_id: lead.id,
-      extraction_id: 'ext-audit-1',
+      extraction_id: setupExt.id,
       qualification_status: 'QUALIFIED',
     });
 
     const score = await supabaseDataService.buyerScores.createBuyerScoreRecord({
       lead_id: lead.id,
       qualification_id: qual.id,
-      extraction_id: 'ext-audit-1',
+      extraction_id: setupExt.id,
       score: 93,
       tier: 'TIER_1_HOT',
       score_band: 'HOT',
@@ -868,9 +905,10 @@ async function runPhase5FTestSuite() {
       status: 'DISQUALIFIED',
     });
 
+    const setupExt = await createSetupRecords(lead.id);
     const qual = await supabaseDataService.qualifications.createQualification({
       lead_id: lead.id,
-      extraction_id: 'ext-disq-1',
+      extraction_id: setupExt.id,
       qualification_status: 'DISQUALIFIED' as any,
       reason_codes: ['EXPLICIT_NON_BUYER'] as any,
     });
@@ -878,7 +916,7 @@ async function runPhase5FTestSuite() {
     const score = await supabaseDataService.buyerScores.createBuyerScoreRecord({
       lead_id: lead.id,
       qualification_id: qual.id,
-      extraction_id: 'ext-disq-1',
+      extraction_id: setupExt.id,
       score: 10,
       tier: 'TIER_3_NURTURE',
       score_band: 'NURTURE',
@@ -905,30 +943,23 @@ async function runPhase5FTestSuite() {
       status: 'QUALIFIED',
     });
 
+    const setupExt = await createSetupRecords(lead.id);
     const qual = await supabaseDataService.qualifications.createQualification({
       lead_id: lead.id,
-      extraction_id: 'ext-recai-1',
+      extraction_id: setupExt.id,
       qualification_status: 'QUALIFIED',
     });
 
-    await supabaseDataService.extractions.createExtraction({
-      id: 'ext-recai-1',
-      lead_id: lead.id,
-      call_id: 'call-recai-1',
-      transcript_id: 'tr-recai-1',
-      model: 'gemini-2.5-flash',
-      extraction_status: 'SUCCESS',
-      extracted_data: {
+    await supabaseDataService.extractions.updateExtraction(setupExt.id, { extracted_data: {
         primary_property_type: { value: 'Apartment' },
         primary_configuration: { value: '3BHK' },
         preferred_locations: { value: ['Whitefield'] },
-      } as any,
-    });
+      } as any });
 
     const score = await supabaseDataService.buyerScores.createBuyerScoreRecord({
       lead_id: lead.id,
       qualification_id: qual.id,
-      extraction_id: 'ext-recai-1',
+      extraction_id: setupExt.id,
       score: 84,
       tier: 'TIER_2_WARM',
       score_band: 'WARM',

@@ -9,7 +9,7 @@
  * - Updates Supabase `calls` table and lead workflow state.
  */
 
-import crypto from 'crypto';
+import * as crypto from 'crypto';
 import { supabaseDataService } from '../supabase/repositories';
 import { WorkflowStatus } from '../../schemas/workflow';
 import { transcriptIngestionService } from './transcriptIngestionService';
@@ -87,6 +87,13 @@ export async function processSarvamWebhook(
     if (!isMatch) {
       return { success: false, action: 'ERROR', error: 'Unauthorized' };
     }
+  }
+
+  // 1.5 Rate Limiting for Webhooks
+  // Max 500 webhooks per minute from a provider globally
+  const rl = await supabaseDataService.security.checkAndIncrementRateLimit('global_sarvam_webhook', 'webhook_receive', 60, 500);
+  if (!rl.allowed) {
+    return { success: false, action: 'ERROR', error: 'Webhook rate limit exceeded (burst protection)' };
   }
 
   // 2. Extract Event ID and enforce idempotency via DB

@@ -3,6 +3,7 @@ import express, { Express } from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { requireAuth, requireRole } from './app/middleware/auth';
+import { rateLimit } from './app/middleware/rateLimit';
 import { callService } from './app/services/calls/callService';
 import { processSarvamWebhook } from './app/services/voice/sarvamWebhook';
 import { transcriptIngestionService } from './app/services/voice/transcriptIngestionService';
@@ -53,7 +54,7 @@ export function createApp(): Express {
   // --- PROTECTED API ROUTES (Require Authentication) ---
 
   // Start Outbound Voice Qualification Call
-  app.post('/api/voice/start-call', requireAuth(), requireRole('SALES', 'ADMIN', 'OWNER'), async (req, res) => {
+  app.post('/api/voice/start-call', requireAuth(), requireRole('SALES', 'ADMIN', 'OWNER'), rateLimit('sarvam_api', 50, 3600), async (req, res) => {
     try {
       const { leadId, customVariables } = req.body;
       if (!leadId) {
@@ -105,7 +106,7 @@ export function createApp(): Express {
   });
 
   // Direct Ingest Transcript Endpoint (Internal/Testing)
-  app.post('/api/voice/transcripts/ingest', requireAuth(), requireRole('SALES', 'ADMIN', 'OWNER'), async (req, res) => {
+  app.post('/api/voice/transcripts/ingest', requireAuth(), requireRole('SALES', 'ADMIN', 'OWNER'), rateLimit('api_ingest', 100, 3600), async (req, res) => {
     try {
       const result = await transcriptIngestionService.ingestTranscript(req.body);
       res.json(result);
@@ -115,7 +116,7 @@ export function createApp(): Express {
   });
 
   // Extract Structured Buyer Intelligence (Phase 5B)
-  app.post('/api/voice/extractions/extract', requireAuth(), requireRole('SALES', 'ADMIN', 'OWNER'), async (req, res) => {
+  app.post('/api/voice/extractions/extract', requireAuth(), requireRole('SALES', 'ADMIN', 'OWNER'), rateLimit('gemini_api', 100, 3600), async (req, res) => {
     try {
       const result = await conversationExtractionService.extractFromTranscript(req.body);
       res.json(result);
@@ -161,7 +162,7 @@ export function createApp(): Express {
   });
 
   // Qualify Buyer (Phase 5C)
-  app.post('/api/qualification/qualify', requireAuth(), requireRole('SALES', 'ADMIN', 'OWNER'), async (req, res) => {
+  app.post('/api/qualification/qualify', requireAuth(), requireRole('SALES', 'ADMIN', 'OWNER'), rateLimit('gemini_api', 100, 3600), async (req, res) => {
     try {
       const { extractionId, leadId, forceRequalify, ruleVersion } = req.body;
       if (!extractionId && !leadId) {
@@ -232,7 +233,7 @@ export function createApp(): Express {
   // --- BUYER SCORING & PRIORITIZATION ENDPOINTS (Phase 5D) ---
 
   // Score Buyer
-  app.post('/api/scoring/score', requireAuth(), requireRole('SALES', 'ADMIN', 'OWNER'), async (req, res) => {
+  app.post('/api/scoring/score', requireAuth(), requireRole('SALES', 'ADMIN', 'OWNER'), rateLimit('gemini_api', 100, 3600), async (req, res) => {
     try {
       const { qualificationId, leadId, forceRescore, ruleVersion } = req.body;
       if (!qualificationId && !leadId) {
@@ -317,7 +318,7 @@ export function createApp(): Express {
   // --- PROJECT MATCHING & RECOMMENDATIONS ENDPOINTS (Phase 5E) ---
 
   // Match Buyer Requirements
-  app.post('/api/matching/match', requireAuth(), requireRole('SALES', 'ADMIN', 'OWNER'), async (req, res) => {
+  app.post('/api/matching/match', requireAuth(), requireRole('SALES', 'ADMIN', 'OWNER'), rateLimit('gemini_api', 100, 3600), async (req, res) => {
     try {
       const { leadId, qualificationId, extractionId, forceRematch, ruleVersion, catalogVersion } = req.body;
       if (!leadId) {
@@ -459,7 +460,7 @@ export function createApp(): Express {
   });
 
   // Scout Public Enrichment Endpoint
-  app.post('/api/enrich', requireAuth(), requireRole('SALES', 'ADMIN', 'OWNER'), async (req, res) => {
+  app.post('/api/enrich', requireAuth(), requireRole('SALES', 'ADMIN', 'OWNER'), rateLimit('scout_api', 100, 3600), async (req, res) => {
     try {
       const { leadId, identifiers } = req.body;
       if (!leadId) {
