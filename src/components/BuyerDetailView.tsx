@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ArrowLeft,
   User,
@@ -21,6 +21,12 @@ import {
 import { GFBuyerLead, DataTruthLevel } from '../types/buyerLead';
 import { callService, CallEligibilityExecutionResult } from '../services/calls/callService';
 import { CallEligibilityResult } from '../services/calls/callEligibility';
+import { supabaseDataService } from '../../app/services/supabase/repositories';
+import { DEFAULT_TENANT_ID } from '../../app/schemas/tenant';
+import { DbBrokerHandoff, Call, CallTranscript } from '../../app/schemas/database';
+import { getRecommendedActionAndSLA } from '../services/brokerDashboardService';
+import { Clock, MessageSquare, Play, Inbox, AlertTriangle } from 'lucide-react';
+
 
 interface BuyerDetailViewProps {
   lead: GFBuyerLead;
@@ -40,6 +46,43 @@ export const BuyerDetailView: React.FC<BuyerDetailViewProps> = ({
   const [eligibilityResult, setEligibilityResult] = useState<CallEligibilityResult | null>(null);
   const [mockCallId, setMockCallId] = useState<string | null>(null);
   const [isCalling, setIsCalling] = useState(false);
+
+  const [handoff, setHandoff] = useState<DbBrokerHandoff | null>(null);
+  const [call, setCall] = useState<Call | null>(null);
+  const [transcript, setTranscript] = useState<CallTranscript | null>(null);
+  const [isLoadingWorkspace, setIsLoadingWorkspace] = useState(true);
+  const [showTranscriptDetails, setShowTranscriptDetails] = useState(false);
+
+  useEffect(() => {
+    async function loadWorkspaceData() {
+      setIsLoadingWorkspace(true);
+      try {
+        const hList = await supabaseDataService.brokerHandoffs.getHandoffsByLeadId(DEFAULT_TENANT_ID, lead.lead_id);
+        if (hList && hList.length > 0) {
+          setHandoff(hList[hList.length - 1]);
+        }
+
+        const cList = await supabaseDataService.calls.getCallsByLead(DEFAULT_TENANT_ID, lead.lead_id);
+        if (cList && cList.length > 0) {
+          const latestCall = cList[cList.length - 1];
+          setCall(latestCall);
+          
+          const tx = await supabaseDataService.transcripts.getTranscriptByCallId(DEFAULT_TENANT_ID, latestCall.id);
+          if (tx) {
+            setTranscript(tx);
+          }
+        }
+      } catch (e) {
+        console.error('Failed to load workspace data:', e);
+      } finally {
+        setIsLoadingWorkspace(false);
+      }
+    }
+    loadWorkspaceData();
+  }, [lead.lead_id]);
+
+  const slaInfo = getRecommendedActionAndSLA(lead, handoff || undefined);
+
   const [callSession, setCallSession] = useState<{
     callId?: string;
     provider?: string;
@@ -169,7 +212,7 @@ export const BuyerDetailView: React.FC<BuyerDetailViewProps> = ({
   };
 
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+    <div className="max-w-[90rem] mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
       {/* Back Button & Title Header */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
@@ -341,7 +384,12 @@ export const BuyerDetailView: React.FC<BuyerDetailViewProps> = ({
           </div>
         )}
 
-        <div className="bg-white border border-slate-200 rounded-lg p-6 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-6">
+        
+  <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+    {/* LEFT COLUMN - BUYER DOSSIER */}
+    <div className="xl:col-span-2 space-y-8">
+      <div className="bg-white border border-slate-200 rounded-lg p-6 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-6">
+
           <div className="space-y-2">
             <div className="flex items-center gap-3">
               <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-800 border border-slate-200">
@@ -659,7 +707,153 @@ export const BuyerDetailView: React.FC<BuyerDetailViewProps> = ({
             </div>
           ))}
         </div>
+
+      </div> {/* ends Project Intelligence div */}
+    </div> {/* ends Left Column */}
+    
+    {/* RIGHT COLUMN - ACTION WORKSPACE */}
+    <div className="xl:col-span-1 space-y-6">
+      
+      {/* SLA & Recommended Action */}
+      <div className="bg-white border border-slate-200 rounded-lg p-5 shadow-xs">
+        <h3 className="text-sm font-semibold text-slate-900 border-b border-slate-100 pb-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Clock className="w-4 h-4 text-indigo-600" />
+            <span>Recommended Action</span>
+          </div>
+          <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded tracking-wider ${
+            slaInfo.urgency === 'CRITICAL' ? 'bg-rose-100 text-rose-800' :
+            slaInfo.urgency === 'HIGH' ? 'bg-amber-100 text-amber-800' :
+            slaInfo.urgency === 'MEDIUM' ? 'bg-indigo-100 text-indigo-800' :
+            'bg-slate-100 text-slate-800'
+          }`}>
+            {slaInfo.urgency}
+          </span>
+        </h3>
+        
+        <div className="pt-4 space-y-4">
+          <div>
+            <div className="text-[10px] uppercase font-bold tracking-wider text-slate-400 mb-1">
+              Primary Action
+            </div>
+            <div className="font-semibold text-slate-900 text-sm">{slaInfo.action}</div>
+            <p className="text-xs text-slate-600 mt-1">{slaInfo.description}</p>
+          </div>
+          
+          <div className="flex items-center justify-between p-3 bg-slate-50 rounded border border-slate-100">
+            <div>
+              <div className="text-[10px] uppercase font-bold tracking-wider text-slate-400">Target SLA</div>
+              <div className="font-mono text-sm font-semibold text-slate-900">{slaInfo.slaLabel}</div>
+            </div>
+            <div className="text-right">
+              <div className="text-[10px] uppercase font-bold tracking-wider text-slate-400">Assigned To</div>
+              <div className="font-semibold text-indigo-700 text-xs">{slaInfo.assignedRole}</div>
+            </div>
+          </div>
+          
+          <button className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-colors">
+            ACKNOWLEDGE & START FOLLOW-UP
+          </button>
+        </div>
       </div>
+      
+      {/* CRM Handoff Summary */}
+      <div className="bg-white border border-slate-200 rounded-lg p-5 shadow-xs space-y-4">
+        <h3 className="text-sm font-semibold text-slate-900 border-b border-slate-100 pb-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Inbox className="w-4 h-4 text-indigo-600" />
+            <span>Broker Handoff Summary</span>
+          </div>
+          {handoff ? (
+            <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${
+              handoff.status === 'READY' ? 'bg-emerald-100 text-emerald-800' :
+              handoff.status === 'REQUIRES_REVIEW' ? 'bg-amber-100 text-amber-800' :
+              handoff.status === 'DISPATCHED' ? 'bg-blue-100 text-blue-800' :
+              'bg-slate-100 text-slate-800'
+            }`}>
+              {handoff.status}
+            </span>
+          ) : (
+            <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-slate-100 text-slate-500">
+              NOT GENERATED
+            </span>
+          )}
+        </h3>
+        
+        {isLoadingWorkspace ? (
+          <div className="flex justify-center py-6">
+            <Loader2 className="w-5 h-5 text-indigo-400 animate-spin" />
+          </div>
+        ) : handoff?.commercial_summary ? (
+          <div className="bg-slate-50 p-3 rounded border border-slate-200 whitespace-pre-wrap text-xs text-slate-700 font-mono leading-relaxed max-h-64 overflow-y-auto">
+            {handoff.commercial_summary}
+          </div>
+        ) : (
+          <div className="text-center py-6 space-y-2">
+            <AlertTriangle className="w-6 h-6 text-slate-400 mx-auto" />
+            <p className="text-xs text-slate-500">Commercial summary not available yet.</p>
+          </div>
+        )}
+      </div>
+
+      {/* Interaction History & Transcripts */}
+      <div className="bg-white border border-slate-200 rounded-lg p-5 shadow-xs space-y-4">
+        <h3 className="text-sm font-semibold text-slate-900 border-b border-slate-100 pb-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <MessageSquare className="w-4 h-4 text-indigo-600" />
+            <span>Interaction History</span>
+          </div>
+        </h3>
+        
+        {isLoadingWorkspace ? (
+          <div className="flex justify-center py-6">
+            <Loader2 className="w-5 h-5 text-indigo-400 animate-spin" />
+          </div>
+        ) : transcript ? (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between p-3 bg-slate-50 rounded border border-slate-200">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center">
+                  <Play className="w-3.5 h-3.5 text-indigo-600 ml-0.5" />
+                </div>
+                <div>
+                  <div className="text-xs font-semibold text-slate-900">Sarvam AI Call</div>
+                  <div className="text-[10px] text-slate-500">
+                    Duration: {transcript.duration_seconds}s • {new Date(transcript.captured_at).toLocaleDateString()}
+                  </div>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowTranscriptDetails(!showTranscriptDetails)}
+                className="text-xs font-semibold text-indigo-600 hover:text-indigo-800"
+              >
+                {showTranscriptDetails ? 'Hide' : 'View'}
+              </button>
+            </div>
+            
+            {showTranscriptDetails && (
+              <div className="mt-2 bg-slate-900 rounded border border-slate-800 p-3 max-h-64 overflow-y-auto space-y-3">
+                {Array.isArray(transcript.transcript_turns) && transcript.transcript_turns.map((turn: any, i: number) => (
+                  <div key={i} className="text-xs">
+                    <span className={`font-bold ${turn.speaker === 'agent' ? 'text-indigo-400' : 'text-emerald-400'}`}>
+                      {turn.speaker === 'agent' ? 'AI' : 'Buyer'}:
+                    </span>{' '}
+                    <span className="text-slate-300">{turn.text}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <p className="text-xs text-slate-500 italic text-center py-4">
+            No past interactions recorded.
+          </p>
+        )}
+      </div>
+
+    </div>
+  </div>
+
     </div>
   );
 };
