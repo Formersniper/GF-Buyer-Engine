@@ -548,11 +548,10 @@ ${recAction}
           handoffId,
           'SENT',
           dispatchRes.dispatch_id,
-          dispatchRes.channel
+          dispatchRes.channel,
+          { error: null, retryEligible: false, lastAttemptAt: new Date().toISOString() }
         );
-
         await supabaseDataService.brokerHandoffs.updateStatus(handoffId, 'DISPATCHED', 'ROUTED');
-
         await supabaseDataService.leadEvents.appendLeadEvent({
           lead_id: handoff.lead_id,
           event_type: 'DISPATCH_COMPLETED',
@@ -564,44 +563,54 @@ ${recAction}
           },
         });
       } else {
+        const isRetryable = !!dispatchRes.error?.toLowerCase().includes('timeout') || !!dispatchRes.error?.toLowerCase().includes('network');
         await supabaseDataService.brokerHandoffs.updateDispatchStatus(
           handoffId,
           'FAILED',
           dispatchRes.dispatch_id,
-          dispatchRes.channel
+          dispatchRes.channel,
+          { error: dispatchRes.error || 'Dispatch failed', retryEligible: isRetryable, lastAttemptAt: new Date().toISOString() }
         );
-
         await supabaseDataService.leadEvents.appendLeadEvent({
           lead_id: handoff.lead_id,
           event_type: 'DISPATCH_FAILED',
           event_data: {
             handoff_id: handoffId,
             error: dispatchRes.error || 'Dispatch failed',
+            retry_eligible: isRetryable
           },
         });
+        dispatchRes.status = "FAILED"; dispatchRes.retry_eligible = isRetryable;
       }
-
       return dispatchRes;
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : 'Dispatch exception';
-      await supabaseDataService.brokerHandoffs.updateDispatchStatus(handoffId, 'FAILED');
+      const isRetryable = errorMsg.toLowerCase().includes('timeout') || errorMsg.toLowerCase().includes('network');
+      await supabaseDataService.brokerHandoffs.updateDispatchStatus(
+        handoffId, 
+        'FAILED',
+        null,
+        enabledConfig ? enabledConfig.provider_name : dispatchChannel.channelName,
+        { error: errorMsg, retryEligible: isRetryable, lastAttemptAt: new Date().toISOString() }
+      );
       await supabaseDataService.leadEvents.appendLeadEvent({
         lead_id: handoff.lead_id,
         event_type: 'DISPATCH_FAILED',
         event_data: {
           handoff_id: handoffId,
           error: errorMsg,
+          retry_eligible: isRetryable
         },
       });
-
       return {
         success: false,
         dispatch_id: '',
-        channel: this.defaultChannel.channelName,
+        channel: enabledConfig ? enabledConfig.provider_name : dispatchChannel.channelName,
         status: 'FAILED',
         delivered_at: new Date().toISOString(),
-        dry_run: dryRun,
+        dry_run: actualDryRun,
         error: errorMsg,
+        retry_eligible: isRetryable
       };
     }
   }

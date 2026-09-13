@@ -8,6 +8,7 @@ export function CrmDispatchWorkspace({ leadId, handoffId, currentStatus, onDispa
   const [isSaving, setIsSaving] = useState(false);
   const [isDispatching, setIsDispatching] = useState(false);
   const [dispatchResult, setDispatchResult] = useState<any>(null);
+  const [handoff, setHandoff] = useState<any>(null);
 
   const [editForm, setEditForm] = useState({
     id: '',
@@ -17,6 +18,26 @@ export function CrmDispatchWorkspace({ leadId, handoffId, currentStatus, onDispa
     is_enabled: true,
     dry_run_mode: true
   });
+
+  const loadData = async () => {
+    setIsLoading(true);
+    try {
+      const cRes = await fetch('/api/crm/config');
+      if (cRes.ok) {
+        setConfigs(await cRes.json());
+      }
+      if (handoffId) {
+        const hRes = await fetch(`/api/handoff/${handoffId}`);
+        if (hRes.ok) {
+          setHandoff(await hRes.json());
+        }
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const loadConfig = async () => {
     try {
@@ -33,8 +54,8 @@ export function CrmDispatchWorkspace({ leadId, handoffId, currentStatus, onDispa
   };
 
   useEffect(() => {
-    loadConfig();
-  }, []);
+    loadData();
+  }, [handoffId]);
 
   const handleEditClick = () => {
     const active = configs.find(c => c.is_enabled) || configs[0];
@@ -81,7 +102,7 @@ export function CrmDispatchWorkspace({ leadId, handoffId, currentStatus, onDispa
     }
   };
 
-  const handleDispatch = async () => {
+  const handleDispatch = async (force: boolean = false) => {
     if (!handoffId) return;
     setIsDispatching(true);
     setDispatchResult(null);
@@ -89,10 +110,14 @@ export function CrmDispatchWorkspace({ leadId, handoffId, currentStatus, onDispa
       const res = await fetch(`/api/handoff/${handoffId}/dispatch`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dryRun: false })
+        body: JSON.stringify({ dryRun: false, forceRedispatch: force })
       });
       const data = await res.json();
       setDispatchResult(data);
+      if (handoffId) {
+        const hRes = await fetch(`/api/handoff/${handoffId}`);
+        if (hRes.ok) setHandoff(await hRes.json());
+      }
       if (data.success && onDispatchSuccess) {
         onDispatchSuccess();
       }
@@ -177,6 +202,27 @@ export function CrmDispatchWorkspace({ leadId, handoffId, currentStatus, onDispa
                 <Edit3 className="w-3.5 h-3.5" /> Config
               </button>
             </div>
+            
+          {handoff && (
+            <div className="bg-slate-50 p-3 rounded border border-slate-200 text-xs mt-4">
+              <div className="font-semibold text-slate-900 flex items-center gap-1.5 mb-2 border-b border-slate-200 pb-2">
+                <Settings className="w-3.5 h-3.5 text-slate-500" /> Dispatch Monitoring & Follow-up
+              </div>
+              <div className="grid grid-cols-2 gap-y-2 gap-x-4 text-slate-600 mt-2">
+                <div>Dispatch Status: <span className="font-medium text-slate-900">{handoff.dispatch_status}</span></div>
+                <div>Routing Status: <span className="font-medium text-slate-900">{handoff.routing_status}</span></div>
+                <div>Handoff Status: <span className="font-medium text-slate-900">{handoff.handoff_status}</span></div>
+                <div>Assigned Role: <span className="font-medium text-slate-900">{handoff.assigned_role || 'Unassigned'}</span></div>
+                <div>Assigned Team: <span className="font-medium text-slate-900">{handoff.assigned_team || 'Unassigned'}</span></div>
+                <div>SLA Deadline: <span className="font-medium text-slate-900">{handoff.sla_deadline ? new Date(handoff.sla_deadline).toLocaleString() : 'N/A'}</span></div>
+                {handoff.dispatch_id && <div className="col-span-2">Dispatch ID: <span className="font-mono text-[10px] text-slate-800 bg-slate-100 px-1 py-0.5 rounded">{handoff.dispatch_id}</span></div>}
+                {handoff.dispatch_error && <div className="col-span-2 text-red-600">Error: <span className="font-medium">{handoff.dispatch_error}</span></div>}
+                {(handoff.retry_count !== undefined && handoff.retry_count > 0) && <div>Retry Count: <span className="font-medium text-slate-900">{handoff.retry_count}</span></div>}
+                {handoff.last_attempt_at && <div className="col-span-2">Last Attempt: <span className="font-medium text-slate-900">{new Date(handoff.last_attempt_at).toLocaleString()}</span></div>}
+              </div>
+            </div>
+          )}
+
             {activeConfig ? (
               <div className="grid grid-cols-2 gap-y-2 gap-x-4 text-slate-600 mt-2">
                 <div>Provider: <span className="font-medium text-slate-900">{activeConfig.provider_name}</span></div>
@@ -193,15 +239,29 @@ export function CrmDispatchWorkspace({ leadId, handoffId, currentStatus, onDispa
 
           <div className="pt-2">
              <button
-                onClick={handleDispatch}
-                disabled={isDispatching || !handoffId || currentStatus === 'SENT' || currentStatus === 'ACKNOWLEDGED'}
+                onClick={() => handleDispatch(false)}
+                disabled={isDispatching || !handoffId || handoff?.dispatch_status === 'SENT' || handoff?.dispatch_status === 'ACKNOWLEDGED'}
+
                 className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-300 text-white rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-2"
              >
                 {isDispatching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                {currentStatus === 'SENT' || currentStatus === 'ACKNOWLEDGED' ? 'ALREADY DISPATCHED' : 'DISPATCH HANDOFF TO CRM'}
+                {handoff?.dispatch_status === 'SENT' || handoff?.dispatch_status === 'ACKNOWLEDGED' ? 'ALREADY DISPATCHED' : 'DISPATCH HANDOFF TO CRM'}
              </button>
           </div>
           
+          {handoff?.dispatch_status === 'FAILED' && handoff?.retry_eligible && (
+            <div className="pt-2">
+              <button
+                onClick={() => handleDispatch(true)}
+                disabled={isDispatching}
+                className="w-full py-2.5 bg-amber-600 hover:bg-amber-700 disabled:bg-amber-300 text-white rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-2"
+              >
+                {isDispatching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                RETRY DISPATCH (FORCE)
+              </button>
+            </div>
+          )}
+
           {dispatchResult && (
             <div className={`p-3 rounded text-xs border ${dispatchResult.success ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
               <div className="font-semibold mb-1 flex items-center gap-1.5">

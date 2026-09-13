@@ -55,13 +55,15 @@ export interface BrokerHandoffRepository {
     id: string,
     dispatchStatus: BrokerDispatchStatus,
     dispatchId?: string | null,
-    channel?: string | null
+    channel?: string | null,
+    options?: { error?: string | null; retryEligible?: boolean; lastAttemptAt?: string }
   ): Promise<DbBrokerHandoff>;
   updateDispatchStatus(
     id: string,
     dispatchStatus: BrokerDispatchStatus,
     dispatchId?: string | null,
-    channel?: string | null
+    channel?: string | null,
+    options?: { error?: string | null; retryEligible?: boolean; lastAttemptAt?: string }
   ): Promise<DbBrokerHandoff>;
   listHandoffQueue(
     scopeOrFilter?: TenantScope | TenantContext | string | { tier?: string; status?: string; limit?: number },
@@ -321,26 +323,35 @@ export function createBrokerHandoffRepository(
       arg2: any,
       arg3?: any,
       arg4?: any,
-      arg5?: any
+      arg5?: any,
+      arg6?: any
     ) => {
       let scope: ResolvedTenantScope;
       let id: string;
       let dispatchStatus: BrokerDispatchStatus;
       let dispatchId: string | null | undefined;
       let channel: string | null | undefined;
+      let options: { error?: string | null; retryEligible?: boolean; lastAttemptAt?: string } | undefined;
 
-      if (typeof arg1 === 'object' || (typeof arg1 === 'string' && typeof arg2 === 'string' && typeof arg3 === 'string' && arg5 !== undefined)) {
+      // Fixed condition: if arg1 is an object (scope), or if we explicitly identify the first arg as tenantId (not standard here without object).
+      // A better check: arg1 is scope if it's an object OR if arg1 is a string (tenantId) BUT handoffStatus (arg3) is a valid status.
+      // Actually, BrokerDispatchStatus is one of 'PENDING', 'SENT', 'ACKNOWLEDGED', 'FAILED', 'IGNORED_DUPLICATE'.
+      // If arg2 is NOT one of those, then arg1 is scope and arg2 is id.
+      const validStatuses = ['PENDING', 'SENT', 'ACKNOWLEDGED', 'FAILED', 'IGNORED_DUPLICATE'];
+      if (typeof arg1 === 'object' || (typeof arg1 === 'string' && !validStatuses.includes(arg2))) {
         scope = resolveEffectiveTenantScope(arg1 as TenantScope);
         id = arg2 as string;
         dispatchStatus = arg3 as BrokerDispatchStatus;
         dispatchId = arg4;
         channel = arg5;
+        options = arg6;
       } else {
         scope = resolveEffectiveTenantScope(undefined);
         id = arg1 as string;
         dispatchStatus = arg2 as BrokerDispatchStatus;
         dispatchId = arg3;
         channel = arg4;
+        options = arg5;
       }
 
       const existing = await createBrokerHandoffRepository(brokerHandoffsStore, leadsRepo).getHandoff(scope, id);
@@ -353,6 +364,10 @@ export function createBrokerHandoffRepository(
         dispatch_status: dispatchStatus,
         dispatch_id: dispatchId !== undefined ? dispatchId : existing.dispatch_id,
         dispatch_channel: channel !== undefined ? channel : existing.dispatch_channel,
+        dispatch_error: options?.error !== undefined ? options.error : existing.dispatch_error,
+        retry_eligible: options?.retryEligible !== undefined ? options.retryEligible : existing.retry_eligible,
+        retry_count: existing.retry_count !== undefined ? (options?.lastAttemptAt ? existing.retry_count + 1 : existing.retry_count) : 0,
+        last_attempt_at: options?.lastAttemptAt !== undefined ? options.lastAttemptAt : existing.last_attempt_at,
         updated_at: now,
       };
 
@@ -361,6 +376,10 @@ export function createBrokerHandoffRepository(
         dispatch_status: dispatchStatus,
         dispatch_id: dispatchId !== undefined ? dispatchId : existing.dispatch_id,
         dispatch_channel: channel !== undefined ? channel : existing.dispatch_channel,
+        dispatch_error: options?.error !== undefined ? options.error : existing.dispatch_error,
+        retry_eligible: options?.retryEligible !== undefined ? options.retryEligible : existing.retry_eligible,
+        retry_count: existing.retry_count !== undefined ? (options?.lastAttemptAt ? existing.retry_count + 1 : existing.retry_count) : 0,
+        last_attempt_at: options?.lastAttemptAt !== undefined ? options.lastAttemptAt : existing.last_attempt_at,
         handoff_payload: updatedPayload,
         updated_at: now,
       };

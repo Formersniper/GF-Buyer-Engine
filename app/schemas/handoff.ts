@@ -139,6 +139,10 @@ export interface BrokerHandoffPackage {
   dispatch_channel?: string | null;
   dispatch_status?: BrokerDispatchStatus;
   dispatch_id?: string | null;
+  dispatch_error?: string | null;
+  retry_eligible?: boolean;
+  retry_count?: number;
+  last_attempt_at?: string | null;
   handoff_version: string;
   rule_version: string;
   created_at: string;
@@ -165,6 +169,10 @@ export interface DbBrokerHandoff {
   dispatch_channel: string | null;
   dispatch_status: BrokerDispatchStatus;
   dispatch_id: string | null;
+  dispatch_error?: string | null;
+  retry_eligible?: boolean;
+  retry_count?: number;
+  last_attempt_at?: string | null;
   handoff_version: string;
   rule_version: string;
   created_at: string;
@@ -204,6 +212,7 @@ export interface DispatchResult {
   dry_run: boolean;
   message?: string;
   error?: string;
+  retry_eligible?: boolean;
 }
 
 export interface HandoffQueueItem {
