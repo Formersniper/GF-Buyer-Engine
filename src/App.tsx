@@ -8,6 +8,7 @@ import { Header } from './components/Header';
 import { LeadImportView } from './components/LeadImportView';
 import { ProcessingView } from './components/ProcessingView';
 import { QualifiedBuyersView } from './components/QualifiedBuyersView';
+import { BrokerCommandCenterView } from './components/BrokerCommandCenterView';
 import { BuyerDetailView } from './components/BuyerDetailView';
 import { ProjectMatchesView } from './components/ProjectMatchesView';
 import { GFBuyerLead } from './types/buyerLead';
@@ -80,9 +81,8 @@ export default function App() {
         )}
 
         {activeView === 'buyers' && (
-          <QualifiedBuyersView
-            leads={leads}
-            onSelectLead={handleSelectLead}
+          <BrokerCommandCenterView
+            onSelectLead={(lead) => handleSelectLead(lead.lead_id)}
           />
         )}
 

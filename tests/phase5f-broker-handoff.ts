@@ -494,11 +494,12 @@ async function runPhase5FTestSuite() {
     });
 
     // Provide multi requirements via extraction
+    const setupExt = await createSetupRecords(lead.id);
     const extraction = await supabaseDataService.extractions.createExtraction({
-      id: 'ext-multi-1',
+      id: crypto.randomUUID(),
       lead_id: lead.id,
-      call_id: 'call-multi-1',
-      transcript_id: 'tr-multi-1',
+      call_id: setupExt.call_id,
+      transcript_id: setupExt.transcript_id,
       model: 'gemini-2.5-flash',
       extraction_status: 'SUCCESS',
       extracted_data: {

@@ -230,6 +230,7 @@ async function runPhase6bLiveScoutSuite(): Promise<void> {
 
   if (failedCount === 0) {
     console.log('VERDICT: LIVE SCOUT VERIFIED\n');
+    process.exit(0);
   } else {
     console.log('VERDICT: LIVE SCOUT NOT VERIFIED\n');
     process.exit(1);

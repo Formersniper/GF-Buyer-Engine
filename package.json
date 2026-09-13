@@ -20,6 +20,7 @@
     "test:phase5d": "tsx tests/phase5d-buyer-scoring.ts",
     "test:phase5e": "tsx tests/phase5e-project-matching.ts",
     "test:phase5f": "tsx tests/phase5f-broker-handoff.ts",
+    "test:phase8b1": "tsx tests/phase8b1-broker-dashboard.ts",
     "test:security:auth": "tsx tests/security-auth-foundation.ts",
     "test:security:ratelimit": "tsx tests/security-rate-limiting.ts",
     "test:security:concurrency": "tsx tests/security-concurrency.ts",
@@ -33,7 +34,7 @@
     "test:security:cors": "tsx tests/security-cors-headers.ts",
     "test:persistence": "tsx tests/persistence-diagnostics.ts",
     "test:security:all": "npm run test:security:auth && npm run test:security:ratelimit && npm run test:security:concurrency && npm run test:security:costs && npm run test:security:pii && npm run test:security:redaction && npm run test:security:errors && npm run test:security:correlation && npm run test:security:config && npm run test:security:boundary && npm run test:security:cors && npm run test:persistence",
-    "test:all": "export SKIP_INNER_RECURSION=true; npm run test:phase4a && npm run test:phase4b && npm run test:phase5a && npm run test:phase5b && npm run test:phase5c && npm run test:phase5d && npm run test:phase5e && npm run test:phase5f"
+    "test:all": "export SKIP_INNER_RECURSION=true; npm run test:phase4a && npm run test:phase4b && npm run test:phase5a && npm run test:phase5b && npm run test:phase5c && npm run test:phase5d && npm run test:phase5e && npm run test:phase5f && npm run test:phase8b1"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

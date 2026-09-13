@@ -21,6 +21,13 @@ async function runTests() {
   }
 
   // Without a Supabase client, production should fail closed!
+  const savedUrl = process.env.VITE_SUPABASE_URL;
+  const savedSbUrl = process.env.SUPABASE_URL;
+  delete process.env.VITE_SUPABASE_URL;
+  delete process.env.SUPABASE_URL;
+  const { resetSupabaseClient } = await import('../app/services/supabase/client');
+  resetSupabaseClient();
+
   const validHeaders = { 'authorization': `Bearer test-secret` };
   
   try {
@@ -31,7 +38,11 @@ async function runTests() {
     }, validHeaders);
     assert(false, 'Production persistence fell back to memory without failing!');
   } catch (err: any) {
-    assert(err.message.includes('requires Supabase database client'), 'Production persistence fails closed if no DB client is available');
+    assert(err.message.includes('requires Supabase database client') || err.message.includes('disabled in production'), 'Production persistence fails closed if no DB client is available');
+  } finally {
+    if (savedUrl) process.env.VITE_SUPABASE_URL = savedUrl;
+    if (savedSbUrl) process.env.SUPABASE_URL = savedSbUrl;
+    resetSupabaseClient();
   }
 
   // To test actual logic without a real DB, we temporarily switch to non-production 

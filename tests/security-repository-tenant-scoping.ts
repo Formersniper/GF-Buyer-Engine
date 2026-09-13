@@ -17,6 +17,7 @@
  */
 
 import { SupabaseDataService } from '../app/services/supabase/repositories';
+import { resetSupabaseClient } from '../app/services/supabase/client';
 import {
   TenantRequiredError,
   TenantMismatchError,
@@ -43,8 +44,16 @@ function assert(condition: boolean, message: string) {
 const TENANT_ALPHA = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const TENANT_BETA = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 
+const originalViteUrl = process.env.VITE_SUPABASE_URL;
+const originalSbUrl = process.env.SUPABASE_URL;
+
 async function runRepositoryScopingTests() {
-  console.log('============================================================');
+  delete process.env.VITE_SUPABASE_URL;
+  delete process.env.SUPABASE_URL;
+  resetSupabaseClient();
+
+  try {
+    console.log('============================================================');
   console.log('GROWTHFORGE BUYER INTELLIGENCE ENGINE');
   console.log('PHASE 8A.3 REPOSITORY TENANT SCOPING SECURITY SUITE');
   console.log('============================================================\n');
@@ -435,6 +444,11 @@ async function runRepositoryScopingTests() {
 
   if (passCount !== results.length) {
     process.exit(1);
+  }
+  } finally {
+    if (originalViteUrl) process.env.VITE_SUPABASE_URL = originalViteUrl;
+    if (originalSbUrl) process.env.SUPABASE_URL = originalSbUrl;
+    resetSupabaseClient();
   }
 }
 

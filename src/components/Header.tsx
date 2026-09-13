@@ -29,7 +29,7 @@ export const Header: React.FC<HeaderProps> = ({
   const viewNameMap: Record<string, string> = {
     import: 'Phase1_Lead_Intake_Raw_CSV',
     processing: 'Phase1_Telemetry_Pipeline_Funnel',
-    buyers: 'Phase1_Qualified_Buyer_Matrix',
+    buyers: 'Phase8B_Broker_Command_Center_Workspace',
     'buyer-detail': 'Phase1_Canonical_Buyer_Fact_Record',
     matches: 'Phase1_Project_Catalog_Fit_Engine',
   };
