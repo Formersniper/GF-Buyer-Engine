@@ -481,26 +481,46 @@ ${recAction}
         error: `Broker handoff ${handoffId} not found.`,
       };
     }
+    const tenantId = handoff.tenant_id || "00000000-0000-0000-0000-000000000001";
+    const configs = await supabaseDataService.crmConfigs.listConfigs({ tenantId, isPlatformAdmin: true });
+    const enabledConfig = configs.find((c: any) => c.is_enabled);
+
+    let dispatchChannel = this.defaultChannel;
+    let actualDryRun = dryRun;
+
+    if (enabledConfig) {
+      if (!enabledConfig.provider_name || !enabledConfig.destination_type) {
+        return {
+          success: false,
+          dispatch_id: "",
+          channel: enabledConfig.provider_name || "UNKNOWN",
+          status: "FAILED",
+          delivered_at: new Date().toISOString(),
+          dry_run: dryRun,
+          error: `CRM Configuration ${enabledConfig.id} is incomplete.`,
+        };
+      }
+      actualDryRun = dryRun || enabledConfig.dry_run_mode;
+    }
 
     // Check dispatch idempotency
-    if (!forceRedispatch && (handoff.dispatch_status === 'SENT' || handoff.dispatch_status === 'ACKNOWLEDGED')) {
+    if (!forceRedispatch && (handoff.dispatch_status === "SENT" || handoff.dispatch_status === "ACKNOWLEDGED")) {
       await supabaseDataService.leadEvents.appendLeadEvent({
         lead_id: handoff.lead_id,
-        event_type: 'DISPATCH_DUPLICATE',
+        event_type: "DISPATCH_DUPLICATE",
         event_data: {
           handoff_id: handoffId,
           existing_dispatch_id: handoff.dispatch_id,
           existing_dispatch_status: handoff.dispatch_status,
         },
       });
-
       return {
         success: true,
         dispatch_id: handoff.dispatch_id || `dup-${handoffId}`,
-        channel: handoff.dispatch_channel || this.defaultChannel.channelName,
-        status: 'IGNORED_DUPLICATE',
+        channel: handoff.dispatch_channel || (enabledConfig ? enabledConfig.provider_name : dispatchChannel.channelName),
+        status: "IGNORED_DUPLICATE",
         delivered_at: handoff.updated_at,
-        dry_run: dryRun,
+        dry_run: actualDryRun,
         message: `Handoff ${handoffId} was already dispatched with status ${handoff.dispatch_status}. Duplicate ignored.`,
       };
     }
@@ -508,16 +528,20 @@ ${recAction}
     // Audit Event: DISPATCH_STARTED
     await supabaseDataService.leadEvents.appendLeadEvent({
       lead_id: handoff.lead_id,
-      event_type: 'DISPATCH_STARTED',
+      event_type: "DISPATCH_STARTED",
       event_data: {
         handoff_id: handoffId,
-        channel: this.defaultChannel.channelName,
-        dry_run: dryRun,
+        channel: enabledConfig ? enabledConfig.provider_name : dispatchChannel.channelName,
+        dry_run: actualDryRun,
       },
     });
 
     try {
-      const dispatchRes = await this.defaultChannel.dispatch(handoff.handoff_payload, { dryRun });
+      const dispatchRes = await dispatchChannel.dispatch(handoff.handoff_payload, { dryRun: actualDryRun });
+
+      if (enabledConfig) {
+        dispatchRes.channel = enabledConfig.provider_name;
+      }
 
       if (dispatchRes.success) {
         await supabaseDataService.brokerHandoffs.updateDispatchStatus(

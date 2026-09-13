@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { CrmDispatchWorkspace } from "./CrmDispatchWorkspace";
 import {
   ArrowLeft,
   User,
@@ -795,6 +796,13 @@ export const BuyerDetailView: React.FC<BuyerDetailViewProps> = ({
           </div>
         )}
       </div>
+
+      <CrmDispatchWorkspace 
+        leadId={lead.id} 
+        handoffId={handoff?.id} 
+        currentStatus={handoff?.dispatch_status} 
+        onDispatchSuccess={() => window.location.reload()} 
+      />
 
       {/* Interaction History & Transcripts */}
       <div className="bg-white border border-slate-200 rounded-lg p-5 shadow-xs space-y-4">

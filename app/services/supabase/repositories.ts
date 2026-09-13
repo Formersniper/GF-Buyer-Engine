@@ -1,4 +1,6 @@
 import { createSecurityRepository, SecurityRepository } from './repos/securityRepo';
+import { CrmConfigurationRepository, createCrmConfigurationRepository } from "./repos/crmConfigRepo";
+import { CrmConfiguration } from "../../schemas/handoff";
 /**
  * GrowthForge Buyer Intelligence Engine - Authoritative Supabase Repositories
  *
@@ -203,6 +205,7 @@ export class SupabaseDataService {
   private membershipsStore: Map<string, TenantMembership> = new FallbackSafeMap();
   private apiKeysStore: Map<string, TenantApiKey> = new FallbackSafeMap();
   private webhookEventsStore: Map<string, WebhookEvent> = new FallbackSafeMap();
+  private crmConfigsStore: Map<string, CrmConfiguration> = new FallbackSafeMap();
 
   // Public typed repositories
   public readonly leads: LeadsRepository;
@@ -222,7 +225,8 @@ export class SupabaseDataService {
   public readonly tenantMemberships: TenantMembershipsRepository;
   public readonly tenantApiKeys: TenantApiKeysRepository;
   public readonly webhookEvents: WebhookEventsRepository;
-      
+  public readonly crmConfigs: CrmConfigurationRepository;
+
   private securityLocksStore = new FallbackSafeMap<string, any>();
   private securityRateLimitsStore = new FallbackSafeMap<string, any>();
   private securityIdempotencyStore = new FallbackSafeMap<string, any>();
@@ -256,6 +260,7 @@ export class SupabaseDataService {
     this.tenantApiKeys = createTenantApiKeysRepository(this.apiKeysStore);
     this.webhookEvents = createWebhookEventsRepository(this.webhookEventsStore);
     this.security = createSecurityRepository(this.securityLocksStore, this.securityRateLimitsStore, this.securityIdempotencyStore);
+    this.crmConfigs = createCrmConfigurationRepository(this.crmConfigsStore);
   }
 
   private seedDefaultData(): void {

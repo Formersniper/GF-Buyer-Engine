@@ -228,3 +228,21 @@ export interface HandoffQueueItem {
   recommended_action: string;
   created_at: string;
 }
+
+export interface CrmConfiguration {
+  id: string; // UUID
+  tenant_id: string; // UUID
+  provider_name: string; // e.g., 'Salesforce', 'HubSpot', 'Custom'
+  destination_type: string; // e.g., 'WEBHOOK', 'API', 'MOCK_SALES_CHANNEL'
+  endpoint_url: string | null;
+  is_enabled: boolean;
+  dry_run_mode: boolean;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CrmConfigurationSecret {
+  config_id: string; // UUID FK -> crm_configurations.id
+  api_secret: string; // Encrypted or kept server-side
+}
