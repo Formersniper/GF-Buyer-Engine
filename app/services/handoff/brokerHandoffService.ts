@@ -325,6 +325,7 @@ NEXT ACTION:
 ${recAction}
 `.trim();
 
+    const handoffUuid = crypto.randomUUID();
     const handoffId = `handoff-${Date.now()}-${lead.id.slice(0, 8)}`;
     const now = new Date().toISOString();
 
@@ -380,7 +381,7 @@ ${recAction}
 
     // 14. Persist in Database
     const dbRecord = await supabaseDataService.brokerHandoffs.createHandoff({
-      id: handoffId,
+      id: handoffUuid,
       lead_id: lead.id,
       qualification_id: qualification?.id || null,
       score_id: scoreRecord?.id || null,

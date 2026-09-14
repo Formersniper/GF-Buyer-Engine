@@ -10,7 +10,7 @@ import {
   BrokerDispatchStatus,
   HandoffQueueItem,
 } from '../../../schemas/database';
-import { getSupabaseClient } from '../client';
+import { getSupabaseClient, getSupabaseAdminClient } from '../client';
 import { 
   TenantScope,
   TenantContext,
@@ -114,8 +114,17 @@ export function createBrokerHandoffRepository(
         updated_at: now,
       };
 
-      const client = getSupabaseClient();
-      if (client) {
+      const isRealSupabase = !!getSupabaseClient();
+      if (isRealSupabase) {
+        const client = getSupabaseAdminClient();
+        if (!client) {
+          logger.error('Database write aborted: SUPABASE_SERVICE_ROLE_KEY is missing in the current runtime.', {
+            service: 'supabase-repo',
+            operation: 'createHandoff',
+            error_category: 'MISSING_SECURE_RUNTIME_CONFIG',
+          });
+          throw new Error('Database write aborted: SUPABASE_SERVICE_ROLE_KEY environment variable is required for trusted server-side handoff persistence but is missing in the current runtime.');
+        }
         try {
           let queryExisting = client
             .from('broker_handoffs')
@@ -125,7 +134,10 @@ export function createBrokerHandoffRepository(
           if (!scope.isPlatformAdmin && tenantId) {
             queryExisting = queryExisting.eq('tenant_id', tenantId);
           }
-          const { data: existing } = await queryExisting.maybeSingle();
+          const { data: existing, error: existError } = await queryExisting.maybeSingle();
+          if (existError) {
+            throw existError;
+          }
 
           let query;
           if (existing) {
@@ -134,17 +146,31 @@ export function createBrokerHandoffRepository(
             query = client.from('broker_handoffs').insert(record);
           }
           const { data, error } = await query.select().single();
-          if (!error && data) {
+          if (error) {
+            throw error;
+          }
+          if (data) {
             brokerHandoffsStore.set(data.id, data);
             return data;
           }
-        } catch {
-          // fallback
+        } catch (err: any) {
+          logger.error('Database write failed in REAL_SUPABASE mode', {
+            service: 'supabase-repo',
+            operation: 'createHandoff',
+            error_category: 'DATABASE_WRITE_ERROR',
+            data: { error: err.message || String(err) },
+          });
+          throw new Error(`Database operation failed: ${err.message || String(err)}`);
         }
+      } else {
+        logger.info('Running in EXPLICIT PREVIEW mode (in-memory fallback)', {
+          service: 'supabase-repo',
+          operation: 'createHandoff',
+        });
+        brokerHandoffsStore.set(record.id, record);
+        return record;
       }
-
-      brokerHandoffsStore.set(record.id, record);
-      return record;
+      throw new Error('Database write operation was not finalized.');
     },
 
     getHandoff: async (scopeOrId, maybeId) => {
@@ -157,17 +183,27 @@ export function createBrokerHandoffRepository(
             query = query.eq('tenant_id', scope.tenantId);
           }
           const { data, error } = await query.maybeSingle();
-          if (!error && data) return data;
-        } catch {
-          // fallback
+          if (error) {
+            throw error;
+          }
+          return data;
+        } catch (err: any) {
+          logger.error('Database read failed in REAL_SUPABASE mode', {
+            service: 'supabase-repo',
+            operation: 'getHandoff',
+            error_category: 'DATABASE_READ_ERROR',
+            data: { error: err.message || String(err) },
+          });
+          throw new Error(`Database operation failed: ${err.message || String(err)}`);
         }
+      } else {
+        const h = brokerHandoffsStore.get(id) || null;
+        if (!h) return null;
+        if (!scope.isPlatformAdmin && scope.tenantId && h.tenant_id && h.tenant_id !== scope.tenantId) {
+          return null;
+        }
+        return h;
       }
-      const h = brokerHandoffsStore.get(id) || null;
-      if (!h) return null;
-      if (!scope.isPlatformAdmin && scope.tenantId && h.tenant_id && h.tenant_id !== scope.tenantId) {
-        return null;
-      }
-      return h;
     },
 
     getHandoffsByLeadId: async (scopeOrLeadId, maybeLeadId) => {
@@ -184,18 +220,28 @@ export function createBrokerHandoffRepository(
             query = query.eq('tenant_id', scope.tenantId);
           }
           const { data, error } = await query;
-          if (!error && data) return data;
-        } catch {
-          // fallback
+          if (error) {
+            throw error;
+          }
+          return data || [];
+        } catch (err: any) {
+          logger.error('Database query failed in REAL_SUPABASE mode', {
+            service: 'supabase-repo',
+            operation: 'getHandoffsByLeadId',
+            error_category: 'DATABASE_QUERY_ERROR',
+            data: { error: err.message || String(err) },
+          });
+          throw new Error(`Database operation failed: ${err.message || String(err)}`);
         }
+      } else {
+        return Array.from(brokerHandoffsStore.values())
+          .filter((h) => {
+            if (h.lead_id !== leadId) return false;
+            if (!scope.isPlatformAdmin && scope.tenantId && h.tenant_id && h.tenant_id !== scope.tenantId) return false;
+            return true;
+          })
+          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
       }
-      return Array.from(brokerHandoffsStore.values())
-        .filter((h) => {
-          if (h.lead_id !== leadId) return false;
-          if (!scope.isPlatformAdmin && scope.tenantId && h.tenant_id && h.tenant_id !== scope.tenantId) return false;
-          return true;
-        })
-        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     },
 
     getHandoffByScoreId: async (scopeOrScoreId, scoreIdOrRule, maybeRule) => {
@@ -228,21 +274,31 @@ export function createBrokerHandoffRepository(
             query = query.eq('rule_version', ruleVersion);
           }
           const { data, error } = await query.order('created_at', { ascending: false }).limit(1);
-          if (!error && data && data.length > 0) return data[0];
-        } catch {
-          // fallback
+          if (error) {
+            throw error;
+          }
+          return data && data.length > 0 ? data[0] : null;
+        } catch (err: any) {
+          logger.error('Database query failed in REAL_SUPABASE mode', {
+            service: 'supabase-repo',
+            operation: 'getHandoffByScoreId',
+            error_category: 'DATABASE_QUERY_ERROR',
+            data: { error: err.message || String(err) },
+          });
+          throw new Error(`Database operation failed: ${err.message || String(err)}`);
         }
+      } else {
+        return (
+          Array.from(brokerHandoffsStore.values())
+            .filter((h) => {
+              if (h.score_id !== scoreId) return false;
+              if (!scope.isPlatformAdmin && scope.tenantId && h.tenant_id && h.tenant_id !== scope.tenantId) return false;
+              if (ruleVersion && h.rule_version !== ruleVersion) return false;
+              return true;
+            })
+            .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0] || null
+        );
       }
-      return (
-        Array.from(brokerHandoffsStore.values())
-          .filter((h) => {
-            if (h.score_id !== scoreId) return false;
-            if (!scope.isPlatformAdmin && scope.tenantId && h.tenant_id && h.tenant_id !== scope.tenantId) return false;
-            if (ruleVersion && h.rule_version !== ruleVersion) return false;
-            return true;
-          })
-          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0] || null
-      );
     },
 
     getLatestHandoff: async (scopeOrLeadId, maybeLeadId) => {
@@ -294,8 +350,17 @@ export function createBrokerHandoffRepository(
         updated_at: now,
       };
 
-      const client = getSupabaseClient();
-      if (client) {
+      const isRealSupabase = !!getSupabaseClient();
+      if (isRealSupabase) {
+        const client = getSupabaseAdminClient();
+        if (!client) {
+          logger.error('Database update aborted: SUPABASE_SERVICE_ROLE_KEY is missing in the current runtime.', {
+            service: 'supabase-repo',
+            operation: 'updateStatus',
+            error_category: 'MISSING_SECURE_RUNTIME_CONFIG',
+          });
+          throw new Error('Database update aborted: SUPABASE_SERVICE_ROLE_KEY environment variable is required for trusted server-side handoff updates but is missing in the current runtime.');
+        }
         try {
           let query = client
             .from('broker_handoffs')
@@ -305,17 +370,27 @@ export function createBrokerHandoffRepository(
             query = query.eq('tenant_id', scope.tenantId);
           }
           const { data, error } = await query.select().single();
-          if (!error && data) {
+          if (error) {
+            throw error;
+          }
+          if (data) {
             brokerHandoffsStore.set(data.id, data);
             return data;
           }
-        } catch {
-          // fallback
+        } catch (err: any) {
+          logger.error('Database update failed in REAL_SUPABASE mode', {
+            service: 'supabase-repo',
+            operation: 'updateStatus',
+            error_category: 'DATABASE_UPDATE_ERROR',
+            data: { error: err.message || String(err) },
+          });
+          throw new Error(`Database operation failed: ${err.message || String(err)}`);
         }
+      } else {
+        brokerHandoffsStore.set(id, updatedRecord);
+        return updatedRecord;
       }
-
-      brokerHandoffsStore.set(id, updatedRecord);
-      return updatedRecord;
+      throw new Error('Database status update was not finalized.');
     },
 
     updateDispatchStatus: async (
@@ -384,8 +459,17 @@ export function createBrokerHandoffRepository(
         updated_at: now,
       };
 
-      const client = getSupabaseClient();
-      if (client) {
+      const isRealSupabase = !!getSupabaseClient();
+      if (isRealSupabase) {
+        const client = getSupabaseAdminClient();
+        if (!client) {
+          logger.error('Database update aborted: SUPABASE_SERVICE_ROLE_KEY is missing in the current runtime.', {
+            service: 'supabase-repo',
+            operation: 'updateDispatchStatus',
+            error_category: 'MISSING_SECURE_RUNTIME_CONFIG',
+          });
+          throw new Error('Database update aborted: SUPABASE_SERVICE_ROLE_KEY environment variable is required for trusted server-side handoff updates but is missing in the current runtime.');
+        }
         try {
           let query = client
             .from('broker_handoffs')
@@ -395,17 +479,27 @@ export function createBrokerHandoffRepository(
             query = query.eq('tenant_id', scope.tenantId);
           }
           const { data, error } = await query.select().single();
-          if (!error && data) {
+          if (error) {
+            throw error;
+          }
+          if (data) {
             brokerHandoffsStore.set(data.id, data);
             return data;
           }
-        } catch {
-          // fallback
+        } catch (err: any) {
+          logger.error('Database update failed in REAL_SUPABASE mode', {
+            service: 'supabase-repo',
+            operation: 'updateDispatchStatus',
+            error_category: 'DATABASE_UPDATE_ERROR',
+            data: { error: err.message || String(err) },
+          });
+          throw new Error(`Database operation failed: ${err.message || String(err)}`);
         }
+      } else {
+        brokerHandoffsStore.set(id, updatedRecord);
+        return updatedRecord;
       }
-
-      brokerHandoffsStore.set(id, updatedRecord);
-      return updatedRecord;
+      throw new Error('Database dispatch status update was not finalized.');
     },
 
     listHandoffQueue: async (scopeOrFilter, maybeFilter) => {
