@@ -71,6 +71,52 @@ export interface BrokerHandoffRepository {
   ): Promise<HandoffQueueItem[]>;
 }
 
+const mapDatabaseRow = (row: any): DbBrokerHandoff => {
+  if (!row) return row;
+  return {
+    ...row,
+    dispatch_error: row.dispatch_error !== undefined ? row.dispatch_error : (row.handoff_payload?.dispatch_error ?? null),
+    retry_eligible: row.retry_eligible !== undefined ? row.retry_eligible : (row.handoff_payload?.retry_eligible ?? true),
+    retry_count: row.retry_count !== undefined ? row.retry_count : (row.handoff_payload?.retry_count ?? 0),
+    last_attempt_at: row.last_attempt_at !== undefined ? row.last_attempt_at : (row.handoff_payload?.last_attempt_at ?? null),
+  };
+};
+
+const toDatabaseRow = (record: any): any => {
+  const allowedKeys = [
+    'id',
+    'lead_id',
+    'qualification_id',
+    'score_id',
+    'extraction_id',
+    'transcript_id',
+    'call_id',
+    'handoff_payload',
+    'handoff_status',
+    'routing_status',
+    'assigned_role',
+    'assigned_team',
+    'priority_tier',
+    'sla_minutes',
+    'sla_deadline',
+    'dispatch_channel',
+    'dispatch_status',
+    'dispatch_id',
+    'handoff_version',
+    'rule_version',
+    'created_at',
+    'updated_at',
+    'tenant_id'
+  ];
+  const row: any = {};
+  for (const key of allowedKeys) {
+    if (record[key] !== undefined) {
+      row[key] = record[key];
+    }
+  }
+  return row;
+};
+
 export function createBrokerHandoffRepository(
   brokerHandoffsStore: Map<string, DbBrokerHandoff>,
   leadsRepo: LeadsRepository
@@ -128,9 +174,13 @@ export function createBrokerHandoffRepository(
         try {
           let queryExisting = client
             .from('broker_handoffs')
-            .select('id')
-            .eq('score_id', record.score_id)
-            .eq('rule_version', record.rule_version);
+            .select('id');
+          if (record.score_id === null) {
+            queryExisting = queryExisting.is('score_id', null);
+          } else {
+            queryExisting = queryExisting.eq('score_id', record.score_id);
+          }
+          queryExisting = queryExisting.eq('rule_version', record.rule_version);
           if (!scope.isPlatformAdmin && tenantId) {
             queryExisting = queryExisting.eq('tenant_id', tenantId);
           }
@@ -141,17 +191,18 @@ export function createBrokerHandoffRepository(
 
           let query;
           if (existing) {
-            query = client.from('broker_handoffs').update(record).eq('id', existing.id);
+            query = client.from('broker_handoffs').update(toDatabaseRow(record)).eq('id', existing.id);
           } else {
-            query = client.from('broker_handoffs').insert(record);
+            query = client.from('broker_handoffs').insert(toDatabaseRow(record));
           }
           const { data, error } = await query.select().single();
           if (error) {
             throw error;
           }
           if (data) {
-            brokerHandoffsStore.set(data.id, data);
-            return data;
+            const mapped = mapDatabaseRow(data);
+            brokerHandoffsStore.set(mapped.id, mapped);
+            return mapped;
           }
         } catch (err: any) {
           logger.error('Database write failed in REAL_SUPABASE mode', {
@@ -175,7 +226,7 @@ export function createBrokerHandoffRepository(
 
     getHandoff: async (scopeOrId, maybeId) => {
       const { scope, id } = parseScopeAndId(scopeOrId, maybeId);
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         try {
           let query = client.from('broker_handoffs').select('*').eq('id', id);
@@ -186,7 +237,7 @@ export function createBrokerHandoffRepository(
           if (error) {
             throw error;
           }
-          return data;
+          return mapDatabaseRow(data);
         } catch (err: any) {
           logger.error('Database read failed in REAL_SUPABASE mode', {
             service: 'supabase-repo',
@@ -208,7 +259,7 @@ export function createBrokerHandoffRepository(
 
     getHandoffsByLeadId: async (scopeOrLeadId, maybeLeadId) => {
       const { scope, id: leadId } = parseScopeAndId(scopeOrLeadId, maybeLeadId);
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         try {
           let query = client
@@ -223,7 +274,7 @@ export function createBrokerHandoffRepository(
           if (error) {
             throw error;
           }
-          return data || [];
+          return (data || []).map(mapDatabaseRow);
         } catch (err: any) {
           logger.error('Database query failed in REAL_SUPABASE mode', {
             service: 'supabase-repo',
@@ -263,7 +314,7 @@ export function createBrokerHandoffRepository(
         ruleVersion = scoreIdOrRule;
       }
 
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         try {
           let query = client.from('broker_handoffs').select('*').eq('score_id', scoreId);
@@ -277,7 +328,7 @@ export function createBrokerHandoffRepository(
           if (error) {
             throw error;
           }
-          return data && data.length > 0 ? data[0] : null;
+          return data && data.length > 0 ? mapDatabaseRow(data[0]) : null;
         } catch (err: any) {
           logger.error('Database query failed in REAL_SUPABASE mode', {
             service: 'supabase-repo',
@@ -364,7 +415,7 @@ export function createBrokerHandoffRepository(
         try {
           let query = client
             .from('broker_handoffs')
-            .update(updatedRecord)
+            .update(toDatabaseRow(updatedRecord))
             .eq('id', id);
           if (!scope.isPlatformAdmin && scope.tenantId) {
             query = query.eq('tenant_id', scope.tenantId);
@@ -374,8 +425,12 @@ export function createBrokerHandoffRepository(
             throw error;
           }
           if (data) {
-            brokerHandoffsStore.set(data.id, data);
-            return data;
+            const mapped = {
+              ...updatedRecord,
+              ...mapDatabaseRow(data),
+            };
+            brokerHandoffsStore.set(mapped.id, mapped);
+            return mapped;
           }
         } catch (err: any) {
           logger.error('Database update failed in REAL_SUPABASE mode', {
@@ -441,7 +496,7 @@ export function createBrokerHandoffRepository(
         dispatch_channel: channel !== undefined ? channel : existing.dispatch_channel,
         dispatch_error: options?.error !== undefined ? options.error : existing.dispatch_error,
         retry_eligible: options?.retryEligible !== undefined ? options.retryEligible : existing.retry_eligible,
-        retry_count: existing.retry_count !== undefined ? (options?.lastAttemptAt ? existing.retry_count + 1 : existing.retry_count) : 0,
+        retry_count: existing.retry_count !== undefined ? (options?.lastAttemptAt && existing.last_attempt_at ? existing.retry_count + 1 : existing.retry_count) : 0,
         last_attempt_at: options?.lastAttemptAt !== undefined ? options.lastAttemptAt : existing.last_attempt_at,
         updated_at: now,
       };
@@ -453,7 +508,7 @@ export function createBrokerHandoffRepository(
         dispatch_channel: channel !== undefined ? channel : existing.dispatch_channel,
         dispatch_error: options?.error !== undefined ? options.error : existing.dispatch_error,
         retry_eligible: options?.retryEligible !== undefined ? options.retryEligible : existing.retry_eligible,
-        retry_count: existing.retry_count !== undefined ? (options?.lastAttemptAt ? existing.retry_count + 1 : existing.retry_count) : 0,
+        retry_count: existing.retry_count !== undefined ? (options?.lastAttemptAt && existing.last_attempt_at ? existing.retry_count + 1 : existing.retry_count) : 0,
         last_attempt_at: options?.lastAttemptAt !== undefined ? options.lastAttemptAt : existing.last_attempt_at,
         handoff_payload: updatedPayload,
         updated_at: now,
@@ -473,7 +528,7 @@ export function createBrokerHandoffRepository(
         try {
           let query = client
             .from('broker_handoffs')
-            .update(updatedRecord)
+            .update(toDatabaseRow(updatedRecord))
             .eq('id', id);
           if (!scope.isPlatformAdmin && scope.tenantId) {
             query = query.eq('tenant_id', scope.tenantId);
@@ -483,8 +538,12 @@ export function createBrokerHandoffRepository(
             throw error;
           }
           if (data) {
-            brokerHandoffsStore.set(data.id, data);
-            return data;
+            const mapped = {
+              ...updatedRecord,
+              ...mapDatabaseRow(data),
+            };
+            brokerHandoffsStore.set(mapped.id, mapped);
+            return mapped;
           }
         } catch (err: any) {
           logger.error('Database update failed in REAL_SUPABASE mode', {

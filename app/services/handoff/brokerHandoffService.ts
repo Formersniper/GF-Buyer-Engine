@@ -484,7 +484,9 @@ ${recAction}
     }
     const tenantId = handoff.tenant_id || "00000000-0000-0000-0000-000000000001";
     const configs = await supabaseDataService.crmConfigs.listConfigs({ tenantId, isPlatformAdmin: true });
-    const enabledConfig = configs.find((c: any) => c.is_enabled);
+    const enabledConfig = configs
+      .filter((c: any) => c.is_enabled)
+      .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())[0];
 
     let dispatchChannel = this.defaultChannel;
     let actualDryRun = dryRun;
