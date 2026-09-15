@@ -20,6 +20,7 @@ interface ScenarioResult {
   expectedResult: string;
   passed: boolean;
   actualCount?: number;
+  returnedTenantIds?: string[];
   errorMsg?: string;
   unhandledException: boolean;
 }
@@ -37,9 +38,11 @@ async function runTests() {
   const tenantC_upper = "32B2A654-BE8C-4A3D-B2A3-F0FA8B2A1C03";
 
   const leadA = "aaaaae2e-a111-4a3d-b2a3-f0fa8b2a1111";
+  const leadB = "aaaaae2e-b222-4a3d-b2a3-f0fa8b2a2222";
   const leadC = "aaaaae2e-c333-4a3d-b2a3-f0fa8b2a3333";
 
   const handoffA = "b1111111-1111-4111-b111-111111111111";
+  const handoffB = "b2222222-2222-4222-b222-222222222222";
   const handoffC = "b3333333-3333-4333-b333-333333333333";
 
   const emailPattern = `rls-user-${runId}`;
@@ -49,8 +52,8 @@ async function runTests() {
 
   try {
     console.log("Setup: Ensuring clean start for test IDs...");
-    await adminClient.from('broker_handoffs').delete().in('id', [handoffA, handoffC]);
-    await adminClient.from('leads').delete().in('id', [leadA, leadC]);
+    await adminClient.from('broker_handoffs').delete().in('id', [handoffA, handoffB, handoffC]);
+    await adminClient.from('leads').delete().in('id', [leadA, leadB, leadC]);
     await adminClient.from('tenants').delete().in('id', [tenantA, tenantB, tenantC_upper.toLowerCase()]);
 
     console.log("Setup: Creating live tenants...");
@@ -63,15 +66,27 @@ async function runTests() {
     console.log("Setup: Creating leads...");
     await adminClient.from('leads').insert([
       { id: leadA, tenant_id: tenantA, lead_id: `LEAD-RLS-A-${runId}`, name: 'Lead A', status: 'HANDOFF' },
+      { id: leadB, tenant_id: tenantB, lead_id: `LEAD-RLS-B-${runId}`, name: 'Lead B', status: 'HANDOFF' },
       { id: leadC, tenant_id: tenantC_upper.toLowerCase(), lead_id: `LEAD-RLS-C-${runId}`, name: 'Lead C', status: 'HANDOFF' }
     ]);
 
-    console.log("Setup: Creating broker handoffs...");
+    console.log("Setup: Creating broker handoffs for Tenants A, B, and C...");
     await adminClient.from('broker_handoffs').insert([
       {
         id: handoffA,
         lead_id: leadA,
         tenant_id: tenantA,
+        handoff_status: 'READY',
+        routing_status: 'ROUTED',
+        priority_tier: 'HIGH',
+        sla_minutes: 60,
+        sla_deadline: new Date(Date.now() + 3600000).toISOString(),
+        dispatch_status: 'PENDING'
+      },
+      {
+        id: handoffB,
+        lead_id: leadB,
+        tenant_id: tenantB,
         handoff_status: 'READY',
         routing_status: 'ROUTED',
         priority_tier: 'HIGH',
@@ -95,13 +110,13 @@ async function runTests() {
     console.log("Setup: Database test entries verified.");
 
     const scenarios = [
-      { num: 1, desc: "Valid Tenant A (Lowercase)", jwtTenantId: tenantA, expected: "Allowed (Returns Row)" },
-      { num: 2, desc: "Tenant B / Cross-Tenant Isolation", jwtTenantId: tenantB, expected: "Denied (Empty Result)" },
+      { num: 1, desc: "Valid Tenant A (Lowercase)", jwtTenantId: tenantA, expected: "Allowed Tenant A's Row Only" },
+      { num: 2, desc: "Tenant B / Cross-Tenant Isolation", jwtTenantId: tenantB, expected: "Allowed Tenant B's Row Only, Isolation Proven" },
       { num: 3, desc: "Missing tenant_id claim", jwtTenantId: undefined, expected: "Denied (Empty Result / Fail Closed)" },
       { num: 4, desc: "tenant_id = 'null' claim", jwtTenantId: "null", expected: "Denied (Empty Result / Fail Closed)" },
       { num: 5, desc: "tenant_id = 'not-a-uuid' claim", jwtTenantId: "not-a-uuid", expected: "Denied (Empty Result / Fail Closed)" },
       { num: 6, desc: "tenant_id = '12345' claim", jwtTenantId: "12345", expected: "Denied (Empty Result / Fail Closed)" },
-      { num: 7, desc: "Uppercase valid UUID", jwtTenantId: tenantC_upper, expected: "Allowed (Returns Row / Case Insensitive)" }
+      { num: 7, desc: "Uppercase valid UUID", jwtTenantId: tenantC_upper, expected: "Allowed Tenant C's Row Only" }
     ];
 
     for (const sc of scenarios) {
@@ -182,9 +197,10 @@ async function runTests() {
         auth: { persistSession: false, autoRefreshToken: false }
       });
 
-      console.log("Quering broker_handoffs table using the authenticated client...");
+      console.log("Querying broker_handoffs table using the authenticated client...");
       
       let actualCount = 0;
+      let returnedTenantIds: string[] = [];
       let errorMsg = undefined;
       let unhandledException = false;
 
@@ -196,7 +212,9 @@ async function runTests() {
           console.error("Query returned error:", error.message);
         } else {
           actualCount = data ? data.length : 0;
+          returnedTenantIds = data ? data.map((row: any) => row.tenant_id) : [];
           console.log(`Query succeeded. Row count: ${actualCount}`);
+          console.log(`Returned Tenant IDs in rows:`, returnedTenantIds);
         }
       } catch (ex: any) {
         unhandledException = true;
@@ -208,9 +226,12 @@ async function runTests() {
       let passed = false;
       if (!unhandledException) {
         if (sc.num === 1) {
-          passed = (actualCount > 0);
+          passed = (actualCount === 1 && returnedTenantIds.length === 1 && returnedTenantIds[0] === tenantA);
         } else if (sc.num === 2) {
-          passed = (actualCount === 0);
+          // Genuinely proves cross-tenant isolation:
+          // Tenant B authenticated JWT can see Tenant B's handoff but cannot see Tenant A's or Tenant C's handoffs.
+          // Explicitly check returned tenant IDs
+          passed = (actualCount === 1 && returnedTenantIds.length === 1 && returnedTenantIds[0] === tenantB);
         } else if (sc.num === 3) {
           passed = (actualCount === 0);
         } else if (sc.num === 4) {
@@ -220,7 +241,7 @@ async function runTests() {
         } else if (sc.num === 6) {
           passed = (actualCount === 0);
         } else if (sc.num === 7) {
-          passed = (actualCount > 0);
+          passed = (actualCount === 1 && returnedTenantIds.length === 1 && returnedTenantIds[0] === tenantC_upper.toLowerCase());
         }
       }
 
@@ -231,6 +252,7 @@ async function runTests() {
         expectedResult: sc.expected,
         passed,
         actualCount,
+        returnedTenantIds,
         errorMsg,
         unhandledException
       });
@@ -251,8 +273,8 @@ async function runTests() {
     }
 
     console.log("Deleting database test entries...");
-    await adminClient.from('broker_handoffs').delete().in('id', [handoffA, handoffC]);
-    await adminClient.from('leads').delete().in('id', [leadA, leadC]);
+    await adminClient.from('broker_handoffs').delete().in('id', [handoffA, handoffB, handoffC]);
+    await adminClient.from('leads').delete().in('id', [leadA, leadB, leadC]);
     await adminClient.from('tenants').delete().in('id', [tenantA, tenantB, tenantC_upper.toLowerCase()]);
 
     console.log("\n====================================================");
@@ -265,6 +287,7 @@ async function runTests() {
       console.log(`  - JWT Tenant ID Claim  : ${res.tenantIdInJwt}`);
       console.log(`  - Expected Outcome     : ${res.expectedResult}`);
       console.log(`  - Actual Row Count     : ${res.actualCount !== undefined ? res.actualCount : 'N/A'}`);
+      console.log(`  - Returned Tenant IDs  : ${res.returnedTenantIds ? JSON.stringify(res.returnedTenantIds) : 'N/A'}`);
       console.log(`  - Unhandled Exception  : ${res.unhandledException ? "YES ❌" : "NO ✅"}`);
       if (res.errorMsg) console.log(`  - Error Message        : ${res.errorMsg}`);
       console.log(`  - Verdict              : ${res.passed ? "PASS ✅" : "FAIL ❌"}`);
