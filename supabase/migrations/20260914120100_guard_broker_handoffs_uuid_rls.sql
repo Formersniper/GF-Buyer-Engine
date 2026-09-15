@@ -6,13 +6,13 @@ DROP POLICY IF EXISTS "Allow tenant-based access on broker_handoffs" ON broker_h
 CREATE POLICY "Allow tenant-based access on broker_handoffs" ON broker_handoffs
 FOR ALL
 USING (
-    (auth.jwt() ->> 'tenant_id') IS NOT NULL
-    AND (auth.jwt() ->> 'tenant_id') != 'null'
+    coalesce(auth.jwt() -> 'app_metadata' ->> 'tenant_id', auth.jwt() ->> 'tenant_id') IS NOT NULL
+    AND coalesce(auth.jwt() -> 'app_metadata' ->> 'tenant_id', auth.jwt() ->> 'tenant_id') != 'null'
     AND tenant_id = (
         CASE
-            WHEN (auth.jwt() ->> 'tenant_id')
+            WHEN coalesce(auth.jwt() -> 'app_metadata' ->> 'tenant_id', auth.jwt() ->> 'tenant_id')
                  ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
-            THEN (auth.jwt() ->> 'tenant_id')::uuid
+            THEN coalesce(auth.jwt() -> 'app_metadata' ->> 'tenant_id', auth.jwt() ->> 'tenant_id')::uuid
             ELSE NULL
         END
     )
