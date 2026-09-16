@@ -170,7 +170,7 @@ Buyer: Yes, my husband and I are finalizing it together this month.`;
 
     assert(result.success, `Pipeline must succeed: ${result.error}`);
     assert(result.action === 'PIPELINE_COMPLETED', `Action must be PIPELINE_COMPLETED, got ${result.action}`);
-    assert(result.current_stage === 'HANDOFF', `Current stage must be HANDOFF, got ${result.current_stage}`);
+    assert(result.current_stage === 'DISPATCH', `Current stage must be DISPATCH, got ${result.current_stage}`);
 
     // Verify all stage records
     assert(result.stages.VALIDATION.status === 'SUCCESS', 'Stage VALIDATION must succeed');

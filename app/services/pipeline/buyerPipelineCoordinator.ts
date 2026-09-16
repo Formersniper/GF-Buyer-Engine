@@ -63,7 +63,8 @@ export type PipelineStage =
   | 'QUALIFICATION'
   | 'SCORING'
   | 'MATCHING'
-  | 'HANDOFF';
+  | 'HANDOFF'
+  | 'DISPATCH';
 
 export type StageExecutionStatus = 'SUCCESS' | 'FAILED' | 'SKIPPED' | 'EXISTING';
 
@@ -122,6 +123,8 @@ export interface BuyerPipelineResult {
   handoff_id?: string | null;
   handoff?: BrokerHandoffPackage | null;
   handoffRecord?: DbBrokerHandoff | null;
+  dispatch_id?: string | null;
+  dispatch_status?: string | null;
 
   error?: string | null;
 }
@@ -179,6 +182,7 @@ export class BuyerPipelineCoordinator {
           SCORING: this.createEmptyStageRecord('SCORING'),
           MATCHING: this.createEmptyStageRecord('MATCHING'),
           HANDOFF: this.createEmptyStageRecord('HANDOFF'),
+          DISPATCH: this.createEmptyStageRecord('DISPATCH'),
         };
 
         // ---------------------------------------------------------------------
@@ -737,6 +741,46 @@ export class BuyerPipelineCoordinator {
           );
         }
 
+        // ---------------------------------------------------------------------
+        // STAGE 7: CRM DISPATCH
+        // ---------------------------------------------------------------------
+        const dispatchStart = Date.now();
+        stages.DISPATCH.started_at = new Date(dispatchStart).toISOString();
+
+        let dispatchResult;
+        try {
+          dispatchResult = await this.handoffService.dispatchHandoff(handoffId, {
+            forceRedispatch: input.forceRerun,
+          });
+        } catch (err: unknown) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          dispatchResult = {
+            success: false,
+            action: 'DISPATCH_EXCEPTION',
+            status: 'FAILED',
+            dispatch_id: null,
+            error: errMsg,
+          };
+        }
+
+        const dispatchEnd = Date.now();
+        stages.DISPATCH.completed_at = new Date(dispatchEnd).toISOString();
+        stages.DISPATCH.duration_ms = dispatchEnd - dispatchStart;
+
+        if (!dispatchResult.success) {
+          stages.DISPATCH.status = 'FAILED';
+          stages.DISPATCH.action = dispatchResult.action || 'FAILED';
+          stages.DISPATCH.error = (dispatchResult as any).error || 'Broker CRM dispatch failed';
+
+          // Do not fail the whole pipeline. Log the dispatch failure but consider pipeline 'COMPLETED'.
+          // Manual/API recovery remains for dispatch.
+          await this.logPipelineFailedEvent(lead.id, resolvedTenantId, 'DISPATCH', stages.DISPATCH.error, correlationId, resolvedCallId, transcript.id);
+        } else {
+          stages.DISPATCH.status = dispatchResult.action === 'IGNORED_DUPLICATE' ? 'EXISTING' : 'SUCCESS';
+          stages.DISPATCH.action = dispatchResult.action || 'SUCCESS';
+          stages.DISPATCH.record_id = dispatchResult.dispatch_id;
+        }
+
         // Audit Event: PIPELINE_COMPLETED
         await supabaseDataService.leadEvents.appendLeadEvent(
           resolvedTenantId ? { tenantId: resolvedTenantId } : {},
@@ -766,7 +810,7 @@ export class BuyerPipelineCoordinator {
           transcriptId: transcript.id,
           tenantId: resolvedTenantId,
           correlationId,
-          currentStage: 'HANDOFF',
+          currentStage: 'DISPATCH',
           stages,
           transcript,
           extraction_id: extractionId,
@@ -780,6 +824,8 @@ export class BuyerPipelineCoordinator {
           handoff_id: handoffId,
           handoff: handoffPackage,
           handoffRecord: handoffDbRecord,
+          dispatch_id: dispatchResult.dispatch_id || null,
+          dispatch_status: (dispatchResult as any).status || null,
         });
       }
     );
@@ -824,6 +870,8 @@ export class BuyerPipelineCoordinator {
     handoff_id?: string | null;
     handoff?: BrokerHandoffPackage | null;
     handoffRecord?: DbBrokerHandoff | null;
+    dispatch_id?: string | null;
+    dispatch_status?: string | null;
     error?: string | null;
   }): BuyerPipelineResult {
     return {
@@ -848,6 +896,8 @@ export class BuyerPipelineCoordinator {
       handoff_id: params.handoff_id || null,
       handoff: params.handoff || null,
       handoffRecord: params.handoffRecord || null,
+      dispatch_id: params.dispatch_id || null,
+      dispatch_status: params.dispatch_status || null,
       error: params.error || null,
     };
   }

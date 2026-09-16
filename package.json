@@ -38,7 +38,8 @@
     "test:all": "export SKIP_INNER_RECURSION=true; npm run test:phase4a && npm run test:phase4b && npm run test:phase5a && npm run test:phase5b && npm run test:phase5c && npm run test:phase5d && npm run test:phase5e && npm run test:phase5f && npm run test:phase8b1 && npm run test:phase8b3 && npm run test:phase8b4",
     "test:phase8b4": "tsx tests/phase8b4-dispatch-monitoring.ts",
     "test:phase8b6": "tsx tests/phase8b6-pipeline-coordinator.ts",
-    "test:phase8b62": "tsx tests/phase8b62-webhook-auto-progression.ts"
+    "test:phase8b62": "tsx tests/phase8b62-webhook-auto-progression.ts",
+    "test:phase8b63": "tsx tests/phase8b63-pipeline-dispatch.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
