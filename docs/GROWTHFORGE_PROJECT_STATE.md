@@ -258,17 +258,23 @@ The product boundary remains strictly:
 ## 12. CURRENT REPOSITORY STATUS
 
 ```yaml
-CURRENT_PHASE: 8B.6.1
-CURRENT_STATUS: FROZEN
-CURRENT_FROZEN_COMMIT: 934409dad4b7c18a41c22703bc0048b16f24e3b7
-LAST_CODE_COMMIT: 934409dad4b7c18a41c22703bc0048b16f24e3b7
-FREEZE_COMMIT: 934409dad4b7c18a41c22703bc0048b16f24e3b7
-NEXT_MILESTONE: Phase 8B.6.2 — Webhook Auto-Progression Hook
-NEXT_MILESTONE_STATUS: DEFINED — NOT YET IMPLEMENTED
+CURRENT_PHASE: 8B.7.1
+CURRENT_STATUS: DEFINED — NOT YET FROZEN
+LAST_FROZEN_PHASE: 8B.6.3
+PHASE_8B_6_3_COMMIT: 6a65f6305ac56607ea125b0459ac169bad509a85
 ```
 
-### Next Milestone Objective (Phase 8B.6.2)
-Phase 8B.6.2 — Webhook Auto-Progression Hook is **NOT IMPLEMENTED**.
-Its future responsibility is to connect the terminal Sarvam call completion event to BuyerPipelineCoordinator using controlled background execution/rate limiting as appropriate.
-Do NOT claim this functionality currently exists.
+### Recent Completed Milestones
+- **Phase 8B.6.2 (Webhook Auto-Progression Hook):** COMPLETE & FROZEN. Sarvam call completion events auto-trigger the BuyerPipelineCoordinator using a fire-and-forget promise wrapper with strict duplication checks.
+- **Phase 8B.6.3 (Pipeline Dispatch Completion):** COMPLETE & FROZEN. The pipeline was extended with a synchronous `DISPATCH` stage: `VALIDATION` → `EXTRACTION` → `QUALIFICATION` → `SCORING` → `MATCHING` → `HANDOFF` → `DISPATCH`.
+
+### Phase 8B.7.1 — Terminal State Contract (Active Implementation)
+This phase addresses terminal-state ambiguity ensuring:
+1. **Pipeline Execution State** and **CRM Dispatch Outcome** are fundamentally distinct.
+2. If `DISPATCH` fails (e.g. timeout), the pipeline orchestration completes successfully (`PIPELINE_COMPLETED_DISPATCH_FAILED`), preserving upstream artifacts and explicit failure metadata.
+3. Successful CRM delivery triggers `PIPELINE_COMPLETED`.
+4. Idempotent requests (duplicates) trigger `PIPELINE_EXISTING`.
+5. Webhook responses separate entirely from downstream CRM timeouts to ensure acknowledgement.
+
+**Note:** Fire-and-forget Promise is not a durable background job. In-flight execution may be lost if the process terminates immediately after acknowledging the webhook. This is a known limitation deferred to a subsequent operational resilience phase.
 

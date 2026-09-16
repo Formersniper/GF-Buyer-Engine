@@ -771,10 +771,6 @@ export class BuyerPipelineCoordinator {
           stages.DISPATCH.status = 'FAILED';
           stages.DISPATCH.action = dispatchResult.action || 'FAILED';
           stages.DISPATCH.error = (dispatchResult as any).error || 'Broker CRM dispatch failed';
-
-          // Do not fail the whole pipeline. Log the dispatch failure but consider pipeline 'COMPLETED'.
-          // Manual/API recovery remains for dispatch.
-          await this.logPipelineFailedEvent(lead.id, resolvedTenantId, 'DISPATCH', stages.DISPATCH.error, correlationId, resolvedCallId, transcript.id);
         } else {
           stages.DISPATCH.status = dispatchResult.action === 'IGNORED_DUPLICATE' ? 'EXISTING' : 'SUCCESS';
           stages.DISPATCH.action = dispatchResult.action || 'SUCCESS';
@@ -794,6 +790,9 @@ export class BuyerPipelineCoordinator {
               qualification_id: qualificationId,
               score_id: scoreId,
               handoff_id: handoffId,
+              dispatch_id: dispatchResult.dispatch_id || null,
+              dispatch_status: stages.DISPATCH.status,
+              dispatch_error: stages.DISPATCH.error || null,
               total_matches: totalMatches,
               tier: handoffPackage?.priority?.tier || score?.tier || 'UNKNOWN',
               correlation_id: correlationId,
@@ -802,9 +801,16 @@ export class BuyerPipelineCoordinator {
           }
         );
 
+        let finalAction = 'PIPELINE_COMPLETED';
+        if (!dispatchResult.success) {
+          finalAction = 'PIPELINE_COMPLETED_DISPATCH_FAILED';
+        } else if (handoffResult.action === 'EXISTING_HANDOFF' || dispatchResult.action === 'IGNORED_DUPLICATE') {
+          finalAction = 'PIPELINE_EXISTING';
+        }
+
         return this.buildResult({
           success: true,
-          action: handoffResult.action === 'EXISTING_HANDOFF' ? 'PIPELINE_EXISTING' : 'PIPELINE_COMPLETED',
+          action: finalAction,
           leadId: lead.id,
           callId: resolvedCallId,
           transcriptId: transcript.id,

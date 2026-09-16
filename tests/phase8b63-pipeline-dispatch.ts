@@ -127,6 +127,7 @@ async function runTests() {
     });
     
     if (!result.success) throw new Error('Pipeline failed entirely due to dispatch failure. Should complete with dispatch failure log.');
+    if (result.action !== 'PIPELINE_COMPLETED_DISPATCH_FAILED') throw new Error(`Expected action PIPELINE_COMPLETED_DISPATCH_FAILED, got ${result.action}`);
     if (result.stages.HANDOFF.status !== 'SUCCESS') throw new Error('HANDOFF was rolled back or marked failed');
     if (result.stages.DISPATCH.status !== 'FAILED') throw new Error('DISPATCH not marked FAILED');
     if (result.stages.DISPATCH.error !== 'Network timeout') throw new Error('DISPATCH error not captured');
