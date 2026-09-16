@@ -188,6 +188,27 @@ export interface CallTranscript {
   updated_at: string;
 }
 
+export type PipelineExecutionStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+
+export interface PipelineExecution {
+  id: string; // UUID
+  tenant_id?: string; // UUID FK
+  lead_id: string; // UUID FK
+  call_id?: string | null; // UUID FK
+  source_event_id?: string | null;
+  idempotency_key?: string | null;
+  correlation_id: string;
+  status: PipelineExecutionStatus;
+  current_stage?: string | null;
+  attempt_count: number;
+  next_attempt_at?: string | null;
+  last_error?: string | null;
+  created_at: string;
+  started_at?: string | null;
+  completed_at?: string | null;
+  updated_at: string;
+}
+
 export * from './extraction';
 export * from './qualification';
 export * from './scoring';

@@ -180,4 +180,4 @@ async function runTests() {
   }
 }
 
-runTests().catch(console.error);
+runTests().then(() => process.exit(0)).catch(console.error);

@@ -121,6 +121,10 @@ import {
   createTenantApiKeysRepository,
   createWebhookEventsRepository,
 } from './repos/tenantsRepo';
+import {
+  PipelineExecutionsRepository,
+  createPipelineExecutionsRepository,
+} from './repos/pipelineExecutionsRepo';
 import { generateUUID, parseScopeAndId } from './repos/helpers';
 
 // Re-export repository contracts and types
@@ -142,6 +146,7 @@ export type {
   TenantMembershipsRepository,
   TenantApiKeysRepository,
   WebhookEventsRepository,
+  PipelineExecutionsRepository,
 };
 
 // ==========================================
@@ -206,6 +211,7 @@ export class SupabaseDataService {
   private apiKeysStore: Map<string, TenantApiKey> = new FallbackSafeMap();
   private webhookEventsStore: Map<string, WebhookEvent> = new FallbackSafeMap();
   private crmConfigsStore: Map<string, CrmConfiguration> = new FallbackSafeMap();
+  private pipelineExecutionsStore: Map<string, PipelineExecution> = new FallbackSafeMap();
 
   // Public typed repositories
   public readonly leads: LeadsRepository;
@@ -226,6 +232,7 @@ export class SupabaseDataService {
   public readonly tenantApiKeys: TenantApiKeysRepository;
   public readonly webhookEvents: WebhookEventsRepository;
   public readonly crmConfigs: CrmConfigurationRepository;
+  public readonly pipelineExecutions: PipelineExecutionsRepository;
 
   private securityLocksStore = new FallbackSafeMap<string, any>();
   private securityRateLimitsStore = new FallbackSafeMap<string, any>();
@@ -261,6 +268,7 @@ export class SupabaseDataService {
     this.webhookEvents = createWebhookEventsRepository(this.webhookEventsStore);
     this.security = createSecurityRepository(this.securityLocksStore, this.securityRateLimitsStore, this.securityIdempotencyStore);
     this.crmConfigs = createCrmConfigurationRepository(this.crmConfigsStore);
+    this.pipelineExecutions = createPipelineExecutionsRepository(this.pipelineExecutionsStore);
   }
 
   private seedDefaultData(): void {

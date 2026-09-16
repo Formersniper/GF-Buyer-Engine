@@ -287,19 +287,52 @@ export async function processSarvamWebhook(
     });
   }
 
+  let pipelineExecutionId: string | null = null;
+  const pipelineCorrelationId = crypto.randomUUID();
+
+  // 10. Auto-Progression: Create Durable Pipeline Execution record BEFORE marking webhook COMPLETED
+  if (mappedCallStatus === 'COMPLETED' && !transcriptIngestionFailed) {
+    try {
+      const execution = await supabaseDataService.pipelineExecutions.createExecution(
+        { tenantId: dbCall.tenant_id },
+        {
+          lead_id: dbCall.lead_id,
+          call_id: dbCall.id,
+          source_event_id: eventId,
+          idempotency_key: eventId || `webhook-completed-${dbCall.id}`, // Fallback for safety
+          correlation_id: pipelineCorrelationId,
+          status: 'PENDING',
+        }
+      );
+      pipelineExecutionId = execution.id;
+    } catch (execErr: unknown) {
+      logger.error('Failed to durably record pipeline execution intent', {
+        service: 'sarvam-webhook',
+        operation: 'createPipelineExecution',
+        error_category: 'DATABASE_ERROR',
+        data: {
+          error: execErr instanceof Error ? execErr.message : String(execErr),
+          lead_id: dbCall.lead_id,
+          call_id: dbCall.id,
+          source_event_id: eventId,
+        },
+      });
+      // Fail closed: Webhook is NOT successfully processed if we cannot durably record pipeline intent.
+      return {
+        success: false,
+        action: 'ERROR',
+        error: 'Failed to durably persist pipeline execution intent. Webhook not processed.',
+      };
+    }
+  }
+
+  // 11. Now it is safe to mark webhook as COMPLETED
   if (eventId) {
     await supabaseDataService.webhookEvents.updateEventStatus(eventId, 'COMPLETED');
   }
 
-  // 10. Auto-Progression: Trigger the Buyer Pipeline Coordinator asynchronously for terminal COMPLETED calls
-  if (mappedCallStatus === 'COMPLETED' && !transcriptIngestionFailed) {
-    const pipelineCorrelationId = crypto.randomUUID();
-
-    // IMPORTANT OPERATIONAL LIMITATION:
-    // This is a controlled fire-and-forget Promise, not a durable background job.
-    // If the application process terminates immediately after returning the webhook response,
-    // this in-flight execution may not complete. The existing manual/API restart path
-    // and coordinator idempotency remain the recovery mechanism for this milestone.
+  // 12. Trigger the Buyer Pipeline Coordinator asynchronously for terminal COMPLETED calls
+  if (pipelineExecutionId) {
     buyerPipelineCoordinator.runPipeline({
       leadId: dbCall.lead_id,
       callId: dbCall.id,
@@ -315,6 +348,7 @@ export async function processSarvamWebhook(
         data: {
           lead_id: dbCall.lead_id,
           call_id: dbCall.id,
+          execution_id: pipelineExecutionId,
           error: pipelineErr instanceof Error ? pipelineErr.message : String(pipelineErr),
         },
       });
