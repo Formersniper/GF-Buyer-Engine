@@ -80,6 +80,7 @@ export interface StageExecutionRecord {
 }
 
 export interface BuyerPipelineInput {
+  executionId?: string;
   leadId: string;
   callId?: string;
   transcriptId?: string;

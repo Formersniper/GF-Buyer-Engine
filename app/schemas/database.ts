@@ -203,6 +203,9 @@ export interface PipelineExecution {
   attempt_count: number;
   next_attempt_at?: string | null;
   last_error?: string | null;
+  lease_owner?: string | null;
+  lease_token?: string | null; // UUID
+  lease_expires_at?: string | null;
   created_at: string;
   started_at?: string | null;
   completed_at?: string | null;

@@ -50,6 +50,7 @@ import {
   BrokerRoutingStatus,
   BrokerDispatchStatus,
   HandoffQueueItem,
+  PipelineExecution,
 } from '../../schemas/database';
 import { GFBuyerLead, ProjectMatch as DomainProjectMatch } from '../../schemas/buyerLead';
 import { WorkflowStatus } from '../../schemas/workflow';

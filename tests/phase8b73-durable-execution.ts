@@ -1,3 +1,9 @@
+// Force in-memory mode for tests since we don't have live DB access here
+process.env.SUPABASE_URL = '';
+process.env.SUPABASE_ANON_KEY = '';
+process.env.VITE_SUPABASE_URL = '';
+process.env.VITE_SUPABASE_ANON_KEY = '';
+
 import { processSarvamWebhook } from '../app/services/voice/sarvamWebhook';
 import { supabaseDataService } from '../app/services/supabase/repositories';
 import { DEFAULT_TENANT_ID } from '../app/schemas/tenant';

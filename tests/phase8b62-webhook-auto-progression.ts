@@ -1,3 +1,9 @@
+// Force in-memory mode for tests since we don't have live DB access here
+process.env.SUPABASE_URL = '';
+process.env.SUPABASE_ANON_KEY = '';
+process.env.VITE_SUPABASE_URL = '';
+process.env.VITE_SUPABASE_ANON_KEY = '';
+
 import * as crypto from 'crypto';
 import { processSarvamWebhook } from '../app/services/voice/sarvamWebhook';
 import { supabaseDataService } from '../app/services/supabase/repositories';
@@ -203,7 +209,7 @@ async function executeTests() {
 
   await runTest('TEST G - COORDINATOR FAILURE', async () => {
     pipelineShouldFail = true;
-    const payload = { call_id: VALID_EXTERNAL, status: 'call.ended', transcript: 'hello' };
+    const payload = { event_id: crypto.randomUUID(), call_id: VALID_EXTERNAL, status: 'call.ended', transcript: 'hello' };
     const res = await processSarvamWebhook(payload, { 'authorization': `Bearer ${MOCK_SECRET}` });
     
     if (!res.success) throw new Error('Webhook failed when coordinator rejected');
@@ -213,7 +219,7 @@ async function executeTests() {
   });
 
   await runTest('TEST H - CORRELATION PROPAGATION', async () => {
-    const payload = { call_id: VALID_EXTERNAL, status: 'call.ended', transcript: 'hello' };
+    const payload = { event_id: crypto.randomUUID(), call_id: VALID_EXTERNAL, status: 'call.ended', transcript: 'hello' };
     const res = await processSarvamWebhook(payload, { 'authorization': `Bearer ${MOCK_SECRET}` });
     if (!res.success) throw new Error('Webhook failed');
     const args = pipelineArgs[0];
@@ -223,7 +229,7 @@ async function executeTests() {
   });
 
   await runTest('TEST I - TENANT ISOLATION', async () => {
-    const payload = { call_id: VALID_EXTERNAL, status: 'call.ended', transcript: 'hello', tenant_id: 'fake-tenant' } as any;
+    const payload = { event_id: crypto.randomUUID(), call_id: VALID_EXTERNAL, status: 'call.ended', transcript: 'hello', tenant_id: 'fake-tenant' } as any;
     const res = await processSarvamWebhook(payload, { 'authorization': `Bearer ${MOCK_SECRET}` });
     const args = pipelineArgs[0];
     if (args.tenantId !== VALID_TENANT) throw new Error('Payload manipulated tenant_id');

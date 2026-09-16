@@ -1,3 +1,9 @@
+// Force in-memory mode for tests since we don't have live DB access here
+process.env.SUPABASE_URL = '';
+process.env.SUPABASE_ANON_KEY = '';
+process.env.VITE_SUPABASE_URL = '';
+process.env.VITE_SUPABASE_ANON_KEY = '';
+
 import { brokerHandoffService } from '../app/services/handoff/brokerHandoffService';
 import { buyerPipelineCoordinator } from '../app/services/pipeline/buyerPipelineCoordinator';
 import { supabaseDataService } from '../app/services/supabase/repositories';

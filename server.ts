@@ -20,6 +20,8 @@ import { projectMatchingService } from './app/services/matching/projectMatchingS
 import { brokerHandoffService } from './app/services/handoff/brokerHandoffService';
 import { matchingAgent } from './app/agents/MatchingAgent';
 
+import { pipelineRecoveryWorker } from './app/services/pipeline/pipelineRecoveryWorker';
+
 export function createApp(): Express {
   // If in production, fail-fast validate configuration immediately
   if (process.env.NODE_ENV === 'production') {
@@ -528,6 +530,9 @@ export async function startServer() {
       operation: 'startServer',
       status: 'LISTENING',
     });
+    
+    // Start background workers
+    pipelineRecoveryWorker.start();
   });
 }
 

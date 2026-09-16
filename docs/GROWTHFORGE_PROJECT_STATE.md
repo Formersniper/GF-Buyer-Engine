@@ -120,6 +120,12 @@ Raw Lead
   - Status: **FROZEN**
   - Commit SHA: `934409dad4b7c18a41c22703bc0048b16f24e3b7`
 
+- **Phase 8B.7.4 (Durable Recovery Worker):**
+  - Durable background worker for recovery and crash resilience with atomic claims, lease fencing, exponential retry backoff, and PostgREST schema-cache error remediation.
+  - Status: **FROZEN**
+  - Database Status: `MIGRATION_011: PENDING ADMIN APPLICATION`, `MIGRATION_012: PENDING ADMIN APPLICATION`
+  - Concurrency Status: `REAL_POSTGRES_CONCURRENCY_VERIFICATION: NOT PERFORMED`
+
 ---
 
 ## 4. SUBSYSTEM IMPLEMENTATION DETAILS
@@ -258,9 +264,10 @@ The product boundary remains strictly:
 ## 12. CURRENT REPOSITORY STATUS
 
 ```yaml
-CURRENT_PHASE: 8B.7.3
+CURRENT_PHASE: 8B.7.4
 CURRENT_STATUS: FROZEN
-LAST_FROZEN_PHASE: 8B.7.3
+LAST_FROZEN_PHASE: 8B.7.4
+NEXT_MILESTONE: Phase 8B.7.5 — Crash / Retry / Recovery E2E
 ```
 
 ### Recent Completed Milestones
@@ -268,17 +275,26 @@ LAST_FROZEN_PHASE: 8B.7.3
 - **Phase 8B.6.3 (Pipeline Dispatch Completion):** COMPLETE & FROZEN. The pipeline was extended with a synchronous `DISPATCH` stage.
 - **Phase 8B.7.1 (Terminal State Contract):** COMPLETE & FROZEN. Pipeline Execution State and CRM Dispatch Outcome are decoupled.
 - **Phase 8B.7.2 (Durable Recovery Audit):** COMPLETE & FROZEN. Read-only architecture audit of crash windows and recovery.
+- **Phase 8B.7.3 (Durable Pipeline Execution Contract & Persistence):** COMPLETE & FROZEN. Introduces the durable boundary for pipeline execution using `pipeline_executions`.
 
-### Phase 8B.7.3 — Durable Pipeline Execution Contract & Persistence (FROZEN)
-This phase introduces the durable boundary for pipeline execution:
-1. Created `pipeline_executions` schema and Supabase migration `011_pipeline_executions.sql`.
-2. Modified Sarvam webhook to insert durable intent record *before* acknowledging the webhook event as `COMPLETED`.
-3. If intent persistence fails, the webhook process fails closed (does not acknowledge webhook event).
-4. Duplicate webhooks bypass durable intent creation using `idempotency_key` unique constraints.
-5. The pipeline coordinator execution is triggered asynchronously after intent creation.
-6. Tenant isolation and correlation identity propagation are verified.
-7. Database execution persistence test (`tests/phase8b73-durable-execution.ts`) passes utilizing the repository pattern.
+### Phase 8B.7.4 — Durable Recovery Worker (FROZEN)
+This phase introduces the durable background worker for recovery and crash resilience:
+1. **Durable Recovery Schema (`012_pipeline_recovery.sql`):** Added `lease_owner`, `lease_token`, and `lease_expires_at` columns and index to `pipeline_executions`.
+2. **Atomic Claim RPC (`claim_pipeline_execution`):** Stored procedure selecting eligible `PENDING` (where `next_attempt_at <= NOW()`) or expired `RUNNING` executions using atomic `SKIP LOCKED`, generating unique cryptographic `lease_token` values.
+3. **Lease Fencing (`updateExecutionWithFencing`):** Worker state updates require both `execution_id` AND `lease_token`, fencing out expired or zombie workers from mutating reclaimed executions.
+4. **Recovery Worker (`PipelineRecoveryWorker`):** Background worker polling the execution table, executing claims, running `BuyerPipelineCoordinator` under authoritative durable `tenant_id`, and updating status (`COMPLETED`, `FAILED`, or `PENDING` with retry backoff).
+5. **Server Lifecycle Integration (`server.ts`):** Starts the background worker upon HTTP server listen. Worker errors are trapped gracefully without unhandled rejections or server boot blocking.
+6. **PostgREST PGRST202 Remediation:** Hardened `isMissingClaimRpcError` in `pipelineExecutionsRepo.ts` with strict classification across `PGRST202`, `42883`, and schema-cache error signatures, while protecting unrelated RPCs and schema errors.
+7. **Test Verification Matrix:** All tests passing (`phase8b74-recovery-worker.ts`, `phase8b74-remediation.ts`, `phase8b73-durable-execution.ts`, `phase8b63-pipeline-dispatch.ts`, `phase8b62-webhook-auto-progression.ts`, `phase8b6-pipeline-coordinator.ts`, `tsc --noEmit`, `npm run lint`, `npm run build`).
 
-**Known Limitations:**
-There is still NO durable recovery worker. Phase 8B.7.4 remains the next milestone. Fire-and-forget Promise is not a durable background job. In-flight execution may be lost if the process terminates immediately after acknowledging the webhook. This does not claim automatic crash recovery exists.
+**Database Migration & Deployment Status:**
+- `MIGRATION_011: PENDING ADMIN APPLICATION`
+- `MIGRATION_012: PENDING ADMIN APPLICATION`
+- `MIGRATIONS_APPLIED: NO`
+- `REAL_POSTGRES_CONCURRENCY_VERIFICATION: NOT PERFORMED` (in-memory concurrency and claim semantics validated; live PostgreSQL concurrency not verified due to pending admin migration application).
+
+**Known Limitations & Operational Boundaries:**
+- Production automatic recovery becomes active only after migrations 011 and 012 are applied through an authorized database-admin deployment path. In the interim, repository operations safely leverage in-memory fallback.
+- Next milestone: Phase 8B.7.5 — Crash / Retry / Recovery E2E (not started).
+
 

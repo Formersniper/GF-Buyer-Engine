@@ -14,6 +14,12 @@
  * 10. Audit Event Completeness: Verifies PIPELINE_STARTED, PIPELINE_COMPLETED, PIPELINE_FAILED events
  */
 
+// Force in-memory mode for tests since we don't have live DB access here
+process.env.SUPABASE_URL = '';
+process.env.SUPABASE_ANON_KEY = '';
+process.env.VITE_SUPABASE_URL = '';
+process.env.VITE_SUPABASE_ANON_KEY = '';
+
 import { supabaseDataService } from '../app/services/supabase/repositories';
 import {
   BuyerPipelineCoordinator,
