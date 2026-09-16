@@ -15,6 +15,7 @@ import { WorkflowStatus } from '../../schemas/workflow';
 import { transcriptIngestionService } from './transcriptIngestionService';
 import { WebhookEvent } from '../../schemas/tenant';
 import { logger } from '../security/logger';
+import { buyerPipelineCoordinator } from '../pipeline/buyerPipelineCoordinator';
 
 export interface SarvamWebhookEventPayload {
   event_id?: string;
@@ -252,10 +253,12 @@ export async function processSarvamWebhook(
     (payload as Record<string, unknown>).turns
   );
 
+  let transcriptIngestionFailed = false;
   if (hasTranscriptData) {
     try {
       await transcriptIngestionService.ingestSarvamTranscript(payload);
     } catch (ingestErr: unknown) {
+      transcriptIngestionFailed = true;
       logger.error('Failed to ingest transcript from webhook payload', {
         service: 'sarvam-webhook',
         operation: 'ingestTranscript',
@@ -286,6 +289,36 @@ export async function processSarvamWebhook(
 
   if (eventId) {
     await supabaseDataService.webhookEvents.updateEventStatus(eventId, 'COMPLETED');
+  }
+
+  // 10. Auto-Progression: Trigger the Buyer Pipeline Coordinator asynchronously for terminal COMPLETED calls
+  if (mappedCallStatus === 'COMPLETED' && !transcriptIngestionFailed) {
+    const pipelineCorrelationId = crypto.randomUUID();
+
+    // IMPORTANT OPERATIONAL LIMITATION:
+    // This is a controlled fire-and-forget Promise, not a durable background job.
+    // If the application process terminates immediately after returning the webhook response,
+    // this in-flight execution may not complete. The existing manual/API restart path
+    // and coordinator idempotency remain the recovery mechanism for this milestone.
+    buyerPipelineCoordinator.runPipeline({
+      leadId: dbCall.lead_id,
+      callId: dbCall.id,
+      tenantId: dbCall.tenant_id,
+      correlationId: pipelineCorrelationId,
+    }).catch((pipelineErr) => {
+      logger.error('Failed to execute asynchronous BuyerPipelineCoordinator', {
+        service: 'sarvam-webhook',
+        operation: 'auto-progression',
+        error_category: 'PIPELINE_INVOCATION_ERROR',
+        tenant_id: dbCall.tenant_id,
+        correlation_id: pipelineCorrelationId,
+        data: {
+          lead_id: dbCall.lead_id,
+          call_id: dbCall.id,
+          error: pipelineErr instanceof Error ? pipelineErr.message : String(pipelineErr),
+        },
+      });
+    });
   }
 
   return {
