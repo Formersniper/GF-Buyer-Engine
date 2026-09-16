@@ -76,6 +76,50 @@ Raw Lead
   - Status: **FROZEN**
   - Commit SHA: `18bdcf8c9c79f340acbeb4cc6f7d84f60dbce92d`
 
+- **Phase 8B.6.1 (Production Buyer Pipeline Coordinator):**
+  - **Purpose:** Close the post-call orchestration gap by composing the existing production services into a deterministic buyer-intelligence pipeline.
+  - **Implemented flow:** Transcript Availability / Ingestion → Conversation Extraction → Buyer Qualification → Buyer Scoring → Project / Inventory Matching → Broker Handoff Generation
+  - **Implementation:**
+    - BuyerPipelineCoordinator added.
+    - Existing extraction, qualification, scoring, matching, and handoff services are orchestrated rather than reimplemented.
+    - Deterministic sequential execution.
+    - Downstream stages halt on upstream failure.
+    - Existing idempotency mechanisms are preserved.
+    - Tenant isolation is preserved.
+    - Correlation/request identifiers are propagated.
+    - Audit/stage progression is observable through existing mechanisms.
+    - AI inference is not promoted to buyer confirmation.
+    - Buyer-stated facts preserve appropriate CONFIRMED provenance.
+    - Public/Scout intelligence remains INFERRED.
+    - Project recommendations remain buyer_confirmed=false and recommendation_status=AI_RECOMMENDED unless an explicit future verification mechanism changes that state.
+    - No Sarvam webhook auto-progression was implemented in 8B.6.1.
+    - No new database tables or migrations were introduced.
+    - No Supabase schema changes were made.
+    - No generic CRM functionality was introduced.
+    - No Phase 8B.6.2 functionality was implemented.
+  - **Files introduced / modified in 8B.6.1:**
+    - `app/services/pipeline/buyerPipelineCoordinator.ts`
+    - `app/services/pipeline/index.ts`
+    - `app/services/workflow/index.ts`
+    - `package.json`
+    - `tests/phase8b6-pipeline-coordinator.ts`
+  - **Verification:**
+    - Phase 8B.6.1 coordinator test suite: 10 Passed, 0 Failed.
+    - Typecheck: PASS.
+    - Lint: PASS.
+    - Production build: PASS.
+    - Diff check: PASS.
+    - Tenant isolation: VERIFIED.
+    - Idempotency: VERIFIED.
+    - Failure handling: VERIFIED.
+    - Truth/provenance preservation: VERIFIED.
+    - AI recommendation boundary: VERIFIED.
+    - Database changes: NONE.
+    - Webhook modification: NONE.
+  - **Test Environment Finding:** The Phase 8B.6.1 integration test suite uses live Supabase data and currently does not contain teardown/cleanup logic. Test-created artifacts may therefore persist in the database and may require manual cleanup.
+  - Status: **FROZEN**
+  - Commit SHA: `934409dad4b7c18a41c22703bc0048b16f24e3b7`
+
 ---
 
 ## 4. SUBSYSTEM IMPLEMENTATION DETAILS
@@ -214,34 +258,17 @@ The product boundary remains strictly:
 ## 12. CURRENT REPOSITORY STATUS
 
 ```yaml
-CURRENT_PHASE: Phase 8B.5.4
+CURRENT_PHASE: 8B.6.1
 CURRENT_STATUS: FROZEN
-CURRENT_FROZEN_COMMIT: 18bdcf8c9c79f340acbeb4cc6f7d84f60dbce92d
-LAST_CODE_COMMIT: 4b09a57ef6a84d2eb7c55e5f90ab226ed42e20c5
-FREEZE_COMMIT: 18bdcf8c9c79f340acbeb4cc6f7d84f60dbce92d
-NEXT_MILESTONE: Phase 8B.6 — Production Buyer Qualification & Verified Intent Loop
+CURRENT_FROZEN_COMMIT: 934409dad4b7c18a41c22703bc0048b16f24e3b7
+LAST_CODE_COMMIT: 934409dad4b7c18a41c22703bc0048b16f24e3b7
+FREEZE_COMMIT: 934409dad4b7c18a41c22703bc0048b16f24e3b7
+NEXT_MILESTONE: Phase 8B.6.2 — Webhook Auto-Progression Hook
 NEXT_MILESTONE_STATUS: DEFINED — NOT YET IMPLEMENTED
 ```
 
-### Next Milestone Objective (Phase 8B.6)
-Transform the existing intelligence pipeline into a production-operational verified buyer qualification loop:
-```
-Raw Lead
-→ Public Intelligence
-→ AI Candidate Intelligence
-→ Call Eligibility
-→ Voice Qualification
-→ First-Party Buyer Confirmation
-→ Structured Qualification
-→ Buyer Scoring
-→ Verified Buyer
-→ Project / Inventory Matching
-→ Broker Handoff
-→ CRM / Webhook Dispatch
-```
-- **Product Invariants:**
-  - `PUBLIC SIGNAL ≠ BUYER INTENT`
-  - `AI INFERENCE ≠ BUYER CONFIRMATION`
-- **Truth Model:** `KNOWN`, `INFERRED`, `CONFIRMED`, `UNKNOWN`.
-- **Status:** Defined, scoped, but not yet implemented or started.
+### Next Milestone Objective (Phase 8B.6.2)
+Phase 8B.6.2 — Webhook Auto-Progression Hook is **NOT IMPLEMENTED**.
+Its future responsibility is to connect the terminal Sarvam call completion event to BuyerPipelineCoordinator using controlled background execution/rate limiting as appropriate.
+Do NOT claim this functionality currently exists.
 
