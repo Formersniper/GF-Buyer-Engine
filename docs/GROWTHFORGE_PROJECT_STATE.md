@@ -73,7 +73,8 @@ Raw Lead
 
 - **Phase 8B.5.4 (Production Security Review & E2E Verification):**  
   - Security review of tenant authorization semantics, end-to-end webhook dispatch audit, and idempotency verification.
-  - Status: **READY TO FREEZE / VERIFIED**
+  - Status: **FROZEN**
+  - Commit SHA: `18bdcf8c9c79f340acbeb4cc6f7d84f60dbce92d`
 
 ---
 
@@ -212,9 +213,35 @@ The product boundary remains strictly:
 
 ## 12. CURRENT REPOSITORY STATUS
 
-```
+```yaml
 CURRENT_PHASE: Phase 8B.5.4
-CURRENT_STATUS: READY TO FREEZE
+CURRENT_STATUS: FROZEN
+CURRENT_FROZEN_COMMIT: 18bdcf8c9c79f340acbeb4cc6f7d84f60dbce92d
 LAST_CODE_COMMIT: 4b09a57ef6a84d2eb7c55e5f90ab226ed42e20c5
-NEXT_ACTION: Final freeze verification and definition of next milestone
+FREEZE_COMMIT: 18bdcf8c9c79f340acbeb4cc6f7d84f60dbce92d
+NEXT_MILESTONE: Phase 8B.6 — Production Buyer Qualification & Verified Intent Loop
+NEXT_MILESTONE_STATUS: DEFINED — NOT YET IMPLEMENTED
 ```
+
+### Next Milestone Objective (Phase 8B.6)
+Transform the existing intelligence pipeline into a production-operational verified buyer qualification loop:
+```
+Raw Lead
+→ Public Intelligence
+→ AI Candidate Intelligence
+→ Call Eligibility
+→ Voice Qualification
+→ First-Party Buyer Confirmation
+→ Structured Qualification
+→ Buyer Scoring
+→ Verified Buyer
+→ Project / Inventory Matching
+→ Broker Handoff
+→ CRM / Webhook Dispatch
+```
+- **Product Invariants:**
+  - `PUBLIC SIGNAL ≠ BUYER INTENT`
+  - `AI INFERENCE ≠ BUYER CONFIRMATION`
+- **Truth Model:** `KNOWN`, `INFERRED`, `CONFIRMED`, `UNKNOWN`.
+- **Status:** Defined, scoped, but not yet implemented or started.
+
