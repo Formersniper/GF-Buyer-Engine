@@ -264,10 +264,10 @@ The product boundary remains strictly:
 ## 12. CURRENT REPOSITORY STATUS
 
 ```yaml
-CURRENT_PHASE: 8B.7.4
+CURRENT_PHASE: 8B.7.5
 CURRENT_STATUS: FROZEN
-LAST_FROZEN_PHASE: 8B.7.4
-NEXT_MILESTONE: Phase 8B.7.5 — Crash / Retry / Recovery E2E
+LAST_FROZEN_PHASE: 8B.7.5
+NEXT_PHASE: 8B.7.6
 ```
 
 ### Recent Completed Milestones
@@ -276,25 +276,33 @@ NEXT_MILESTONE: Phase 8B.7.5 — Crash / Retry / Recovery E2E
 - **Phase 8B.7.1 (Terminal State Contract):** COMPLETE & FROZEN. Pipeline Execution State and CRM Dispatch Outcome are decoupled.
 - **Phase 8B.7.2 (Durable Recovery Audit):** COMPLETE & FROZEN. Read-only architecture audit of crash windows and recovery.
 - **Phase 8B.7.3 (Durable Pipeline Execution Contract & Persistence):** COMPLETE & FROZEN. Introduces the durable boundary for pipeline execution using `pipeline_executions`.
+- **Phase 8B.7.4 (Durable Recovery Worker):** COMPLETE & FROZEN. Background worker, atomic claim RPC, and lease fencing.
 
-### Phase 8B.7.4 — Durable Recovery Worker (FROZEN)
-This phase introduces the durable background worker for recovery and crash resilience:
-1. **Durable Recovery Schema (`012_pipeline_recovery.sql`):** Added `lease_owner`, `lease_token`, and `lease_expires_at` columns and index to `pipeline_executions`.
-2. **Atomic Claim RPC (`claim_pipeline_execution`):** Stored procedure selecting eligible `PENDING` (where `next_attempt_at <= NOW()`) or expired `RUNNING` executions using atomic `SKIP LOCKED`, generating unique cryptographic `lease_token` values.
-3. **Lease Fencing (`updateExecutionWithFencing`):** Worker state updates require both `execution_id` AND `lease_token`, fencing out expired or zombie workers from mutating reclaimed executions.
-4. **Recovery Worker (`PipelineRecoveryWorker`):** Background worker polling the execution table, executing claims, running `BuyerPipelineCoordinator` under authoritative durable `tenant_id`, and updating status (`COMPLETED`, `FAILED`, or `PENDING` with retry backoff).
-5. **Server Lifecycle Integration (`server.ts`):** Starts the background worker upon HTTP server listen. Worker errors are trapped gracefully without unhandled rejections or server boot blocking.
-6. **PostgREST PGRST202 Remediation:** Hardened `isMissingClaimRpcError` in `pipelineExecutionsRepo.ts` with strict classification across `PGRST202`, `42883`, and schema-cache error signatures, while protecting unrelated RPCs and schema errors.
-7. **Test Verification Matrix:** All tests passing (`phase8b74-recovery-worker.ts`, `phase8b74-remediation.ts`, `phase8b73-durable-execution.ts`, `phase8b63-pipeline-dispatch.ts`, `phase8b62-webhook-auto-progression.ts`, `phase8b6-pipeline-coordinator.ts`, `tsc --noEmit`, `npm run lint`, `npm run build`).
+### Phase 8B.7.5 — Crash / Retry / Recovery E2E Verification (FROZEN)
+- Phase 8B.7.5 crash/retry/recovery E2E verification completed.
+- 15/15 tests passed (`tests/phase8b75-crash-recovery-e2e.ts`).
+- Crash recovery verified across pipeline stage boundaries (extraction, qualification, scoring, matching, handoff generation, dispatch).
+- Lease expiration/reclaim verified across worker processes.
+- Zombie-worker fencing verified (stale lease tokens cannot mutate reclaimed executions).
+- Active-lease protection verified (valid unexpired leases cannot be stolen).
+- Retry/backoff verified (exponential backoff and `next_attempt_at` enforcement).
+- Maximum-attempt terminal failure verified (`FAILED` terminal state on attempt threshold).
+- Local dispatch idempotency verified (`SENT` dispatch records suppress duplicate channel invocations; `DISPATCH_DUPLICATE` audit event recorded).
+- Dispatch ambiguity boundary verified (Test 13):
+  - In Test 13, the channel successfully transmits the HTTP payload to the remote CRM, but crashes before the dispatch method returns.
+  - The test harness invokes `brokerHandoffService.dispatchHandoff`, whose internal `try/catch` catches the dispatch exception and explicitly persists `dispatch_status: 'FAILED'` via `updateDispatchStatus` along with a `DISPATCH_FAILED` audit event.
+  - Because `dispatch_status` is persisted as `FAILED` (and not `SENT`), the subsequent recovery worker run evaluates `dispatch_status !== 'SENT'` and re-dispatches the payload.
+  - The mock remote CRM receives the payload twice across the crash boundary with the identical `handoff_id`.
+  - Confirms: Remote exactly-once processing is NOT guaranteed by GrowthForge alone. Remote idempotency enforcement remains the responsibility of the receiving CRM (e.g. deduplicating on `handoff_id` or `Idempotency-Key`).
+- Tenant isolation under recovery verified (cross-tenant execution rejected with `TENANT_ISOLATION_VIOLATION`; 0 cross-tenant artifacts created).
+- Audit trail verified (chronological event sequence `CALL_COMPLETED` -> `PIPELINE_STARTED` -> `DISPATCH_STARTED` -> `DISPATCH_COMPLETED` -> `PIPELINE_COMPLETED`).
+- IN_MEMORY_SEMANTICS: VERIFIED.
+- REAL_POSTGRES_CONCURRENCY: NOT_VERIFIED.
+- MIGRATION_011: PENDING ADMIN APPLICATION.
+- MIGRATION_012: PENDING ADMIN APPLICATION.
+- No production architecture changes introduced (test-only suite and documentation freeze).
 
-**Database Migration & Deployment Status:**
-- `MIGRATION_011: PENDING ADMIN APPLICATION`
-- `MIGRATION_012: PENDING ADMIN APPLICATION`
-- `MIGRATIONS_APPLIED: NO`
-- `REAL_POSTGRES_CONCURRENCY_VERIFICATION: NOT PERFORMED` (in-memory concurrency and claim semantics validated; live PostgreSQL concurrency not verified due to pending admin migration application).
-
-**Known Limitations & Operational Boundaries:**
-- Production automatic recovery becomes active only after migrations 011 and 012 are applied through an authorized database-admin deployment path. In the interim, repository operations safely leverage in-memory fallback.
-- Next milestone: Phase 8B.7.5 — Crash / Retry / Recovery E2E (not started).
-
-
+**Operational Boundaries & Guarantees:**
+- Do NOT claim production automatic recovery is active (pending migration deployment via database-admin path).
+- Do NOT claim real PostgreSQL SKIP LOCKED concurrency has been verified (requires live Postgres database with migration applied).
+- Do NOT claim exactly-once external CRM delivery (at-least-once transport semantics; CRM must enforce deduplication on `handoff_id`).
