@@ -123,8 +123,19 @@ Raw Lead
 - **Phase 8B.7.4 (Durable Recovery Worker):**
   - Durable background worker for recovery and crash resilience with atomic claims, lease fencing, exponential retry backoff, and PostgREST schema-cache error remediation.
   - Status: **FROZEN**
-  - Database Status: `MIGRATION_011: PENDING ADMIN APPLICATION`, `MIGRATION_012: PENDING ADMIN APPLICATION`
-  - Concurrency Status: `REAL_POSTGRES_CONCURRENCY_VERIFICATION: NOT PERFORMED`
+
+- **Phase 8B.7.8 (Service-Role Alignment & Graceful Worker Shutdown):**
+  - Service-role admin client enforced for background worker and recovery operations under RLS, eliminated silent anonymous fallback, preserved tenant boundaries, and implemented bounded signal handling (SIGTERM/SIGINT).
+  - Status: **FROZEN**
+
+- **Phase 8B.7.9 (Live Multi-Worker Claim / Lease / Fencing Concurrency Verification):**
+  - Real multi-worker concurrency, atomic claim, lease reclamation, zombie worker fencing, and tenant isolation verified against live Supabase PostgreSQL.
+  - Status: **FROZEN**
+  - Verified Production Baseline Commit SHA: `ecdc9b970a40076388fcf1d61991503f7173a128`
+
+- **Phase 8B.7.10 (Final Production Verification & Freeze):**
+  - Final production verification across all database, security, runtime, pipeline, regression, quality, and observability invariants against live Supabase PostgreSQL. All test artifacts cleaned up. Baseline frozen.
+  - Status: **FROZEN**
 
 ---
 
@@ -264,11 +275,40 @@ The product boundary remains strictly:
 ## 12. CURRENT REPOSITORY STATUS
 
 ```yaml
-CURRENT_PHASE: 8B.7.9
+CURRENT_PHASE: Phase 8B.7.10
 CURRENT_STATUS: FROZEN
-LAST_FROZEN_PHASE: 8B.7.9
-NEXT_PHASE: Phase 8B.7.10 — Final Production Verification
+LAST_FROZEN_PHASE: Phase 8B.7.10
+NEXT_PHASE: Phase 8B.7 durable execution/recovery hardening COMPLETE. Future work moves to the commercial/product layer.
 ```
+
+### Verified Production Baseline
+- **Phase 8B.7.9 Baseline Commit:** `ecdc9b970a40076388fcf1d61991503f7173a128`
+- **Phase 8B.7.10 Freeze Commit:** (Current commit — Final documentation freeze commit)
+- **Production Verification Status:** **PASSED**
+
+### Verified Production Invariants (Live Supabase / PostgreSQL Environment)
+The following invariants were comprehensively verified against the live production Supabase/PostgreSQL database and runtime:
+1. **Migrations 011 and 012 Applied:** Durable `pipeline_executions` schema and atomic `claim_pipeline_execution` RPC.
+2. **Durable Execution Schema:** 19 required columns, foreign keys, timestamps, and unique idempotency constraint `(tenant_id, idempotency_key)`.
+3. **RLS Enforcement:** Unauthenticated anonymous client access is strictly denied (401 / permission denied).
+4. **Atomic RPC Execution:** `claim_pipeline_execution` functions correctly via PostgreSQL `FOR UPDATE SKIP LOCKED`.
+5. **Live Multi-Worker Claim Concurrency:** Concurrent workers serialized safely; zero duplicate claims.
+6. **Lease Reclamation:** Expired leases automatically reclaimed by active workers with incremented `attempt_count`.
+7. **Lease-Token Fencing:** Zombie workers presenting stale tokens are fenced out with 0 rows mutated; legitimate worker mutations succeed.
+8. **Tenant Isolation:** Cross-tenant reads and mutations rejected; coordinator enforces tenant boundary checks.
+9. **Service-Role Execution Privileges:** Background worker and recovery processes utilize non-downgrading service-role client while preserving tenant boundaries.
+10. **Graceful Worker Shutdown:** SIGTERM and SIGINT stop polling intervals and drain active executions with bounded timeouts without hanging.
+11. **Complete Buyer Pipeline Progression:** Deterministic sequence: Transcript Validation → Extraction → Qualification → Scoring → Matching → Handoff Generation → Dispatch → Terminal COMPLETED.
+12. **Webhook Idempotency:** Deterministic deduplication on `(event_id, provider_call_id)` in `webhook_events`.
+13. **CRM Dispatch:** Synchronous handoff dispatch to configured webhook channel with SSRF boundary controls.
+14. **Audit & Observability:** Correlation and request IDs propagated throughout all pipeline stages; structured audit logs written to `lead_events`.
+15. **Test Artifact Cleanup:** All verification test fixtures deleted in reverse foreign-key order; zero orphaned test artifacts remain.
+
+### Important Known Limitations
+1. **Cloud Run Background Polling:** Serverless container environments (Cloud Run) require continuous CPU allocation (`--no-cpu-throttling`) when idle to maintain background worker polling intervals between incoming webhook events.
+2. **At-Least-Once External Delivery:** External CRM / webhook delivery remains **AT-LEAST-ONCE** at the network transport boundary.
+3. **Receiver-Side Idempotency Required:** Exactly-once external processing is **only** possible when the receiving CRM/broker endpoint provides idempotency using `handoff_id`, `dispatch_id`, or an equivalent mechanism. GrowthForge does not claim to provide exactly-once external CRM processing independently of receiver-side idempotency.
+4. **Legacy Static Webhook Event IDs:** Informational legacy static event IDs (`evt-1`, `evt-2`, `evt-3`) exist in `webhook_events` from early development and correctly trigger deterministic duplicate suppression (`IGNORED_DUPLICATE`). They must not be deleted or modified in this freeze operation.
 
 ### Recent Completed Milestones
 - **Phase 8B.6.2 (Webhook Auto-Progression Hook):** COMPLETE & FROZEN. Sarvam call completion events auto-trigger the BuyerPipelineCoordinator using a fire-and-forget promise wrapper with strict duplication checks.
@@ -327,6 +367,8 @@ NEXT_PHASE: Phase 8B.7.10 — Final Production Verification
     - Proved reclaim itself is concurrency-safe under PostgreSQL `FOR UPDATE SKIP LOCKED`.
     - Result: **PASS**
 - **Test Suite Matrix:**
+  - `tests/phase8b710-production-pipeline-verification.ts`: PASS (ALL INVARIANTS)
+  - `tests/phase8b710-live-db-verification.ts`: PASS (ALL INVARIANTS)
   - `tests/phase8b79-live-concurrency.ts`: 7/7 PASS (ALL LIVE DB TESTS)
   - `tests/phase8b78-privilege-shutdown.ts`: 7/7 PASS
   - `tests/phase8b75-crash-recovery-e2e.ts`: 15/15 PASS
