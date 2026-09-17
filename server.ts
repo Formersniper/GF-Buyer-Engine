@@ -504,6 +504,134 @@ export function createApp(): Express {
   return app;
 }
 
+export interface ShutdownOptions {
+  drainTimeoutMs?: number;
+  exitProcess?: boolean;
+}
+
+let isShuttingDown = false;
+let activeServer: import('http').Server | null = null;
+let inFlightTasks = 0;
+
+export function trackInFlightTask<T>(task: Promise<T>): Promise<T> {
+  inFlightTasks++;
+  return task.finally(() => {
+    inFlightTasks--;
+  });
+}
+
+export function getInFlightTaskCount(): number {
+  return inFlightTasks;
+}
+
+export function resetShutdownStateForTesting() {
+  isShuttingDown = false;
+  inFlightTasks = 0;
+}
+
+export async function gracefulShutdown(signal: string, options: ShutdownOptions = {}): Promise<void> {
+  if (isShuttingDown) {
+    logger.warn(`Shutdown already in progress, ignoring duplicate signal: ${signal}`, {
+      service: 'http-server',
+      operation: 'gracefulShutdown',
+      data: { signal }
+    });
+    return;
+  }
+  isShuttingDown = true;
+
+  const drainTimeoutMs = options.drainTimeoutMs ?? 5000;
+  const exitProcess = options.exitProcess ?? (process.env.NODE_ENV !== 'test');
+
+  logger.info(`Received ${signal}. Initiating graceful shutdown...`, {
+    service: 'http-server',
+    operation: 'gracefulShutdown',
+    data: { signal, drainTimeoutMs }
+  });
+
+  // 1. Stop background recovery worker immediately (no new polls, no new claims)
+  try {
+    pipelineRecoveryWorker.stop();
+  } catch (err: any) {
+    logger.error('Error stopping pipelineRecoveryWorker', {
+      service: 'http-server',
+      error_category: 'SHUTDOWN_ERROR',
+      data: { error: err.message }
+    });
+  }
+
+  // 2. Stop accepting new HTTP connections
+  if (activeServer) {
+    try {
+      activeServer.close();
+    } catch (err: any) {
+      logger.error('Error closing HTTP server', {
+        service: 'http-server',
+        error_category: 'SHUTDOWN_ERROR',
+        data: { error: err.message }
+      });
+    }
+  }
+
+  // 3. Bounded drain period for in-flight tasks
+  const startTime = Date.now();
+  let timedOut = false;
+
+  while (inFlightTasks > 0) {
+    if (Date.now() - startTime >= drainTimeoutMs) {
+      timedOut = true;
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+
+  if (timedOut) {
+    logger.warn('Graceful shutdown drain timed out with active in-flight executions. Relying on lease expiration for recovery.', {
+      service: 'http-server',
+      operation: 'gracefulShutdown',
+      data: { remainingInFlight: inFlightTasks, drainTimeoutMs }
+    });
+  } else {
+    logger.info('Graceful shutdown drain completed successfully.', {
+      service: 'http-server',
+      operation: 'gracefulShutdown',
+      data: { durationMs: Date.now() - startTime }
+    });
+  }
+
+  if (exitProcess) {
+    process.exit(0);
+  }
+}
+
+let signalHandlersRegistered = false;
+
+export function registerSignalHandlers(server?: import('http').Server, options: ShutdownOptions = {}) {
+  if (server) {
+    activeServer = server;
+  }
+  if (signalHandlersRegistered) {
+    return;
+  }
+  signalHandlersRegistered = true;
+
+  const onSignal = (signal: string) => {
+    gracefulShutdown(signal, options).catch((err) => {
+      logger.error('Unexpected error during shutdown', {
+        service: 'http-server',
+        error_category: 'SHUTDOWN_ERROR',
+        data: { error: err.message }
+      });
+      if (options.exitProcess ?? (process.env.NODE_ENV !== 'test')) {
+        process.exit(1);
+      }
+    });
+  };
+
+  process.on('SIGTERM', () => onSignal('SIGTERM'));
+  process.on('SIGINT', () => onSignal('SIGINT'));
+}
+
 export async function startServer() {
   const app = createApp();
   const PORT = 3000;
@@ -524,7 +652,7 @@ export async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  const server = app.listen(PORT, '0.0.0.0', () => {
     logger.info(`GrowthForge Server running on http://0.0.0.0:${PORT}`, {
       service: 'http-server',
       operation: 'startServer',
@@ -534,6 +662,9 @@ export async function startServer() {
     // Start background workers
     pipelineRecoveryWorker.start();
   });
+
+  registerSignalHandlers(server);
+  return server;
 }
 
 // Only start the server directly if executed as main entrypoint

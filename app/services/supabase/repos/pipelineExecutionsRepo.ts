@@ -1,7 +1,7 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { PipelineExecution, PipelineExecutionStatus } from '../../../schemas/database';
 import { TenantScope, parseScopeAndId, resolveEffectiveTenantScope } from './helpers';
-import { getSupabaseClient } from '../client';
+import { getSupabaseAdminClient, getSupabaseConfig } from '../client';
 import { logger } from '../../security/logger';
 import { generateUUID } from './helpers';
 
@@ -50,7 +50,6 @@ export function createPipelineExecutionsRepository(store: Map<string, PipelineEx
 
   return {
     async createExecution(scope, input) {
-      const client = getSupabaseClient();
       const resolvedScope = resolveEffectiveTenantScope(scope);
       
       const record: PipelineExecution = {
@@ -66,8 +65,19 @@ export function createPipelineExecutionsRepository(store: Map<string, PipelineEx
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
-      
-      if (client) {
+
+      const isRealSupabase = Boolean(getSupabaseConfig().url);
+      if (isRealSupabase) {
+        const client = getSupabaseAdminClient();
+        if (!client) {
+          logger.error('Durable pipeline execution aborted: SUPABASE_SERVICE_ROLE_KEY is required for server-side execution operations but is missing in the current runtime.', {
+            service: 'supabase-repo',
+            operation: 'createExecution',
+            error_category: 'MISSING_SECURE_RUNTIME_CONFIG',
+          });
+          throw new Error('Database operation aborted: SUPABASE_SERVICE_ROLE_KEY environment variable is required for durable pipeline execution operations but is missing in the current runtime.');
+        }
+
         try {
           const { data, error } = await client
             .from('pipeline_executions')
@@ -111,10 +121,20 @@ export function createPipelineExecutionsRepository(store: Map<string, PipelineEx
     },
     
     async getExecution(scope, executionId) {
-      const client = getSupabaseClient();
       const resolvedScope = resolveEffectiveTenantScope(scope);
-      
-      if (client) {
+
+      const isRealSupabase = Boolean(getSupabaseConfig().url);
+      if (isRealSupabase) {
+        const client = getSupabaseAdminClient();
+        if (!client) {
+          logger.error('Durable pipeline execution aborted: SUPABASE_SERVICE_ROLE_KEY is required for server-side execution operations but is missing in the current runtime.', {
+            service: 'supabase-repo',
+            operation: 'getExecution',
+            error_category: 'MISSING_SECURE_RUNTIME_CONFIG',
+          });
+          throw new Error('Database operation aborted: SUPABASE_SERVICE_ROLE_KEY environment variable is required for durable pipeline execution operations but is missing in the current runtime.');
+        }
+
         try {
           let query = client.from('pipeline_executions').select('*').eq('id', executionId);
           if (!resolvedScope.isPlatformAdmin && resolvedScope.tenantId) {
@@ -147,10 +167,20 @@ export function createPipelineExecutionsRepository(store: Map<string, PipelineEx
     },
     
     async updateExecution(scope, executionId, updates) {
-      const client = getSupabaseClient();
       const resolvedScope = resolveEffectiveTenantScope(scope);
-      
-      if (client) {
+
+      const isRealSupabase = Boolean(getSupabaseConfig().url);
+      if (isRealSupabase) {
+        const client = getSupabaseAdminClient();
+        if (!client) {
+          logger.error('Durable pipeline execution aborted: SUPABASE_SERVICE_ROLE_KEY is required for server-side execution operations but is missing in the current runtime.', {
+            service: 'supabase-repo',
+            operation: 'updateExecution',
+            error_category: 'MISSING_SECURE_RUNTIME_CONFIG',
+          });
+          throw new Error('Database operation aborted: SUPABASE_SERVICE_ROLE_KEY environment variable is required for durable pipeline execution operations but is missing in the current runtime.');
+        }
+
         try {
           let query = client.from('pipeline_executions').update(updates).eq('id', executionId);
           if (!resolvedScope.isPlatformAdmin && resolvedScope.tenantId) {
@@ -188,9 +218,18 @@ export function createPipelineExecutionsRepository(store: Map<string, PipelineEx
     },
     
     async claimExecution(workerId, leaseDurationMs, maxAttempts) {
-      const client = getSupabaseClient();
-      
-      if (client) {
+      const isRealSupabase = Boolean(getSupabaseConfig().url);
+      if (isRealSupabase) {
+        const client = getSupabaseAdminClient();
+        if (!client) {
+          logger.error('Durable pipeline execution claim aborted: SUPABASE_SERVICE_ROLE_KEY is required for server-side background execution operations but is missing in the current runtime.', {
+            service: 'supabase-repo',
+            operation: 'claimExecution',
+            error_category: 'MISSING_SECURE_RUNTIME_CONFIG',
+          });
+          throw new Error('Database operation aborted: SUPABASE_SERVICE_ROLE_KEY environment variable is required for durable pipeline execution operations but is missing in the current runtime.');
+        }
+
         try {
           const { data, error } = await client.rpc('claim_pipeline_execution', {
             p_worker_id: workerId,
@@ -255,10 +294,20 @@ export function createPipelineExecutionsRepository(store: Map<string, PipelineEx
     },
     
     async updateExecutionWithFencing(scope, executionId, leaseToken, updates) {
-      const client = getSupabaseClient();
       const resolvedScope = resolveEffectiveTenantScope(scope);
-      
-      if (client) {
+
+      const isRealSupabase = Boolean(getSupabaseConfig().url);
+      if (isRealSupabase) {
+        const client = getSupabaseAdminClient();
+        if (!client) {
+          logger.error('Durable pipeline execution fenced update aborted: SUPABASE_SERVICE_ROLE_KEY is required for server-side background execution operations but is missing in the current runtime.', {
+            service: 'supabase-repo',
+            operation: 'updateExecutionWithFencing',
+            error_category: 'MISSING_SECURE_RUNTIME_CONFIG',
+          });
+          throw new Error('Database operation aborted: SUPABASE_SERVICE_ROLE_KEY environment variable is required for durable pipeline execution operations but is missing in the current runtime.');
+        }
+
         try {
           let query = client.from('pipeline_executions')
             .update(updates)

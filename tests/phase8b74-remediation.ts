@@ -3,7 +3,7 @@ import { isMissingClaimRpcError, createPipelineExecutionsRepository } from '../a
 import { PipelineRecoveryWorker } from '../app/services/pipeline/pipelineRecoveryWorker';
 import { DEFAULT_TENANT_ID } from '../app/schemas/tenant';
 import { generateUUID } from '../app/services/security/correlationContext';
-import { getSupabaseClient } from '../app/services/supabase/client';
+import { getSupabaseClient, getSupabaseAdminClient } from '../app/services/supabase/client';
 
 async function runTests() {
   console.log('--- Phase 8B.7.4 Remediation Tests ---');
@@ -50,42 +50,52 @@ async function runTests() {
   // We explicitly intercept client RPC/table queries for this test to ensure hermetic simulation
   // independent of whether live Supabase currently contains claim_pipeline_execution.
   const client = getSupabaseClient();
+  const adminClient = getSupabaseAdminClient();
   const origRpc = client?.rpc;
   const origFrom = client?.from;
+  const origAdminRpc = adminClient?.rpc;
+  const origAdminFrom = adminClient?.from;
+
+  const mockRpc = (async (fnName: string, ...args: any[]) => {
+    if (fnName === 'claim_pipeline_execution') {
+      return {
+        data: null,
+        error: {
+          code: 'PGRST202',
+          message: 'Could not find the function public.claim_pipeline_execution(p_lease_duration, p_max_attempts, p_worker_id) in the schema cache'
+        }
+      };
+    }
+    return { data: null, error: null };
+  }) as any;
+
+  const mockFrom = ((table: string) => {
+    if (table === 'pipeline_executions') {
+      const chain: any = {
+        update: () => chain,
+        eq: () => chain,
+        select: () => chain,
+        maybeSingle: async () => ({
+          data: null,
+          error: {
+            code: 'PGRST205',
+            message: 'Could not find the table public.pipeline_executions in the schema cache'
+          }
+        })
+      };
+      return chain;
+    }
+    return ({} as any);
+  }) as any;
 
   try {
     if (client) {
-      client.rpc = (async (fnName: string, ...args: any[]) => {
-        if (fnName === 'claim_pipeline_execution') {
-          return {
-            data: null,
-            error: {
-              code: 'PGRST202',
-              message: 'Could not find the function public.claim_pipeline_execution(p_lease_duration, p_max_attempts, p_worker_id) in the schema cache'
-            }
-          };
-        }
-        return origRpc ? origRpc.call(client, fnName, ...args) : { data: null, error: null };
-      }) as any;
-
-      client.from = ((table: string) => {
-        if (table === 'pipeline_executions') {
-          const chain: any = {
-            update: () => chain,
-            eq: () => chain,
-            select: () => chain,
-            maybeSingle: async () => ({
-              data: null,
-              error: {
-                code: 'PGRST205',
-                message: 'Could not find the table public.pipeline_executions in the schema cache'
-              }
-            })
-          };
-          return chain;
-        }
-        return origFrom ? origFrom.call(client, table) : ({} as any);
-      }) as any;
+      client.rpc = mockRpc;
+      client.from = mockFrom;
+    }
+    if (adminClient) {
+      adminClient.rpc = mockRpc;
+      adminClient.from = mockFrom;
     }
 
     const store = new Map();
@@ -146,6 +156,10 @@ async function runTests() {
     if (client) {
       client.rpc = origRpc;
       client.from = origFrom;
+    }
+    if (adminClient) {
+      adminClient.rpc = origAdminRpc;
+      adminClient.from = origAdminFrom;
     }
   }
 

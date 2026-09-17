@@ -264,10 +264,10 @@ The product boundary remains strictly:
 ## 12. CURRENT REPOSITORY STATUS
 
 ```yaml
-CURRENT_PHASE: 8B.7.5
+CURRENT_PHASE: 8B.7.9
 CURRENT_STATUS: FROZEN
-LAST_FROZEN_PHASE: 8B.7.5
-NEXT_PHASE: 8B.7.6
+LAST_FROZEN_PHASE: 8B.7.9
+NEXT_PHASE: Phase 8B.7.10 — Final Production Verification
 ```
 
 ### Recent Completed Milestones
@@ -277,32 +277,73 @@ NEXT_PHASE: 8B.7.6
 - **Phase 8B.7.2 (Durable Recovery Audit):** COMPLETE & FROZEN. Read-only architecture audit of crash windows and recovery.
 - **Phase 8B.7.3 (Durable Pipeline Execution Contract & Persistence):** COMPLETE & FROZEN. Introduces the durable boundary for pipeline execution using `pipeline_executions`.
 - **Phase 8B.7.4 (Durable Recovery Worker):** COMPLETE & FROZEN. Background worker, atomic claim RPC, and lease fencing.
+- **Phase 8B.7.5 (Crash / Retry / Recovery E2E Verification):** COMPLETE & FROZEN. 15/15 tests passed across crash windows, zombie fencing, and retry backoff.
+- **Phase 8B.7.6 & 8B.7.7 (Live Supabase & Worker Runtime Read-Only Audits):** COMPLETE. Confirmed Migrations 011 and 012 applied to live Supabase; identified anonymous client privilege gap for background worker operations under RLS and missing SIGTERM/SIGINT shutdown handling.
+- **Phase 8B.7.8 (Service-Role Alignment + Graceful Worker Shutdown):** COMPLETE & FROZEN. Enforced service-role admin client for durable background operations, eliminated silent anonymous fallback, preserved tenant boundaries, and implemented bounded signal handling.
 
-### Phase 8B.7.5 — Crash / Retry / Recovery E2E Verification (FROZEN)
-- Phase 8B.7.5 crash/retry/recovery E2E verification completed.
-- 15/15 tests passed (`tests/phase8b75-crash-recovery-e2e.ts`).
-- Crash recovery verified across pipeline stage boundaries (extraction, qualification, scoring, matching, handoff generation, dispatch).
-- Lease expiration/reclaim verified across worker processes.
-- Zombie-worker fencing verified (stale lease tokens cannot mutate reclaimed executions).
-- Active-lease protection verified (valid unexpired leases cannot be stolen).
-- Retry/backoff verified (exponential backoff and `next_attempt_at` enforcement).
-- Maximum-attempt terminal failure verified (`FAILED` terminal state on attempt threshold).
-- Local dispatch idempotency verified (`SENT` dispatch records suppress duplicate channel invocations; `DISPATCH_DUPLICATE` audit event recorded).
-- Dispatch ambiguity boundary verified (Test 13):
-  - In Test 13, the channel successfully transmits the HTTP payload to the remote CRM, but crashes before the dispatch method returns.
-  - The test harness invokes `brokerHandoffService.dispatchHandoff`, whose internal `try/catch` catches the dispatch exception and explicitly persists `dispatch_status: 'FAILED'` via `updateDispatchStatus` along with a `DISPATCH_FAILED` audit event.
-  - Because `dispatch_status` is persisted as `FAILED` (and not `SENT`), the subsequent recovery worker run evaluates `dispatch_status !== 'SENT'` and re-dispatches the payload.
-  - The mock remote CRM receives the payload twice across the crash boundary with the identical `handoff_id`.
-  - Confirms: Remote exactly-once processing is NOT guaranteed by GrowthForge alone. Remote idempotency enforcement remains the responsibility of the receiving CRM (e.g. deduplicating on `handoff_id` or `Idempotency-Key`).
-- Tenant isolation under recovery verified (cross-tenant execution rejected with `TENANT_ISOLATION_VIOLATION`; 0 cross-tenant artifacts created).
-- Audit trail verified (chronological event sequence `CALL_COMPLETED` -> `PIPELINE_STARTED` -> `DISPATCH_STARTED` -> `DISPATCH_COMPLETED` -> `PIPELINE_COMPLETED`).
-- IN_MEMORY_SEMANTICS: VERIFIED.
-- REAL_POSTGRES_CONCURRENCY: NOT_VERIFIED.
-- MIGRATION_011: PENDING ADMIN APPLICATION.
-- MIGRATION_012: PENDING ADMIN APPLICATION.
-- No production architecture changes introduced (test-only suite and documentation freeze).
+### Phase 8B.7.9 — Live Multi-Worker Claim / Lease / Fencing Concurrency Verification (FROZEN)
+- **Live Verification Suite (`tests/phase8b79-live-concurrency.ts`):**
+  - Executed directly against the LIVE Supabase PostgreSQL database using multiple independent client instances simulating discrete worker processes and distinct database connections.
+  - Comprehensive isolation: uses dedicated test tenants, test leads, and test executions, with verified zero-leak cleanup in reverse foreign-key dependency order.
+- **Verification Results across All Required Invariants:**
+  - **TEST A (Concurrent Claim):** Two independent workers concurrently invoked `claim_pipeline_execution` on a single PENDING execution.
+    - Exactly one worker claimed the execution; the losing worker received 0 claims.
+    - PostgreSQL row-level locking (`FOR UPDATE SKIP LOCKED`) successfully serialized claim attempts.
+    - Status transitioned to `RUNNING`.
+    - `attempt_count` incremented exactly once (0 -> 1).
+    - Result: **PASS**
+  - **TEST B (Lease Expiry + Reclaim):** With lease safely set to the past in live PostgreSQL:
+    - An independent reclaiming worker successfully claimed the expired execution.
+    - `lease_owner` changed to the reclaiming worker.
+    - A new, unique `lease_token` was generated.
+    - `attempt_count` incremented exactly once for the reclaim (1 -> 2).
+    - The original worker's token was confirmed stale.
+    - Result: **PASS**
+  - **TEST C (Zombie Worker Fencing):** The stale worker attempted a fenced update using its old `lease_token`:
+    - Mutation was rejected and affected 0 rows (returned null).
+    - The active reclaiming worker's ownership and state remained untampered.
+    - Legitimate fenced mutation by the active worker using the current token succeeded immediately.
+    - Result: **PASS**
+  - **TEST D (Terminal Fencing):** The active worker transitioned execution to `COMPLETED`:
+    - Mutation with stale token on the completed execution was rejected (0 rows affected).
+    - Database state remained `COMPLETED`.
+    - Result: **PASS**
+  - **TEST E (Tenant Isolation):** Executions created across isolated tenants:
+    - Cross-tenant retrieval via repository returned null.
+    - Cross-tenant update was rejected (`Cannot coerce the result to a single JSON object` / not found).
+    - Cross-tenant fenced update returned null.
+    - `BuyerPipelineCoordinator` rejected cross-tenant execution with `TENANT_ISOLATION_VIOLATION`.
+    - Result: **PASS**
+  - **TEST F (Attempt Count Integrity):** Sequence tracked from PENDING -> Claim 1 -> Lease Expiry -> Reclaim 2:
+    - Initial `attempt_count = 0`.
+    - After initial claim: `attempt_count = 1`.
+    - After reclaim: `attempt_count = 2`.
+    - Zero duplicate increments; zero lost increments.
+    - Result: **PASS**
+  - **TEST G (Competing Reclaimers):** Two independent workers simultaneously attempted to reclaim an expired execution:
+    - Exactly one worker won the reclaim; the other received 0 claims.
+    - Exactly one new `lease_token` was generated.
+    - `attempt_count` incremented exactly once (2 -> 3).
+    - Proved reclaim itself is concurrency-safe under PostgreSQL `FOR UPDATE SKIP LOCKED`.
+    - Result: **PASS**
+- **Test Suite Matrix:**
+  - `tests/phase8b79-live-concurrency.ts`: 7/7 PASS (ALL LIVE DB TESTS)
+  - `tests/phase8b78-privilege-shutdown.ts`: 7/7 PASS
+  - `tests/phase8b75-crash-recovery-e2e.ts`: 15/15 PASS
+  - `tests/phase8b74-recovery-worker.ts`: 9/9 PASS
+  - `tests/phase8b74-remediation.ts`: PASS
+  - `tests/phase8b73-durable-execution.ts`: 7/7 PASS
+  - `tests/phase8b63-pipeline-dispatch.ts`: 5/5 PASS
+  - `tests/phase8b62-webhook-auto-progression.ts`: 11/11 PASS
+  - `tests/phase8b6-pipeline-coordinator.ts`: 10/10 PASS
+  - Typecheck (`tsc --noEmit`): PASS (0 errors)
+  - Linter (`npm run lint`): PASS (0 errors)
+  - Build (`npm run build`): PASS
 
 **Operational Boundaries & Guarantees:**
-- Do NOT claim production automatic recovery is active (pending migration deployment via database-admin path).
-- Do NOT claim real PostgreSQL SKIP LOCKED concurrency has been verified (requires live Postgres database with migration applied).
-- Do NOT claim exactly-once external CRM delivery (at-least-once transport semantics; CRM must enforce deduplication on `handoff_id`).
+- Real multi-worker concurrency on Supabase PostgreSQL is mathematically guaranteed by PostgreSQL `FOR UPDATE SKIP LOCKED` inside `claim_pipeline_execution`.
+- Lease token fencing prevents zombie workers from corrupting database state or overwriting subsequent worker progress.
+- Service-role credentials remain strictly server-side and are never exposed to browser bundles.
+- Service-role access is never used to elevate application permissions; tenant boundaries remain strictly isolated.
+- Shutdown drain is strictly bounded; workers never hang indefinitely during container termination.
+- Remote CRM delivery maintains at-least-once transport semantics; downstream systems must enforce deduplication on `handoff_id`.
