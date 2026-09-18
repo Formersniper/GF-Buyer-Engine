@@ -344,7 +344,7 @@ export function createLeadsRepository(leadsStore: Map<string, Lead>): LeadsRepos
           if (!scope.isPlatformAdmin && scope.tenantId) {
             query = query.eq('tenant_id', scope.tenantId);
           }
-          const { data, error } = await query.select().single();
+          const { data, error } = await query.select().maybeSingle();
           if (error) {
             if (error.code === '42703' || error.code === 'PGRST204' || error.code === 'PGRST205' || error.message?.includes('does not exist') || error.message?.includes('not find the')) {
               // fallback

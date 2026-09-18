@@ -350,7 +350,7 @@ export class LeadActivationService {
       const targetStatus: WorkflowStatus = 'CALL_PENDING';
 
       // Persist the durable status transition
-      await supabaseDataService.leads.updateLead(freshLead.id, { status: targetStatus });
+      await supabaseDataService.leads.updateLead({ tenantId: input.tenantId }, freshLead.id, { status: targetStatus });
 
       // Record CALL_ACTIVATION_CLAIMED audit event
       await supabaseDataService.leadEvents.appendLeadEvent({

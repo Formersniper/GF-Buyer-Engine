@@ -19,6 +19,8 @@ import { buyerScoringService } from './app/services/scoring/buyerScoringService'
 import { projectMatchingService } from './app/services/matching/projectMatchingService';
 import { brokerHandoffService } from './app/services/handoff/brokerHandoffService';
 import { matchingAgent } from './app/agents/MatchingAgent';
+import { LeadActivationService } from './app/services/calls/leadActivationService';
+import { evaluateCallEligibility } from './app/services/calls/callEligibility';
 
 import { pipelineRecoveryWorker } from './app/services/pipeline/pipelineRecoveryWorker';
 
@@ -111,6 +113,120 @@ export function createApp(): Express {
       res.json(result);
     } catch (err: unknown) {
       res.status(500).json({ error: err instanceof Error ? err.message : 'Call dispatching failed' });
+    }
+  });
+
+  // Get Call Eligibility for Lead (Phase 9.3.3)
+  app.get('/api/voice/eligibility/:leadId', requireAuth(), requireRole('SALES', 'ADMIN', 'OWNER'), async (req, res) => {
+    try {
+      const tenantId = req.auth?.tenantId;
+      const leadId = req.params.leadId;
+      if (!tenantId) {
+        return res.status(401).json({ error: 'Tenant context missing in authentication' });
+      }
+
+      let dbLead = await supabaseDataService.leads.getLeadByLeadId(tenantId, leadId);
+      if (!dbLead) {
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (uuidRegex.test(leadId)) {
+          try {
+            dbLead = await supabaseDataService.leads.getLead(tenantId, leadId);
+          } catch {
+            // ignore
+          }
+        }
+      }
+      if (!dbLead) {
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (uuidRegex.test(leadId)) {
+          try {
+            const adminLead = await supabaseDataService.leads.getLead(leadId);
+            if (adminLead && adminLead.tenant_id && adminLead.tenant_id !== tenantId) {
+              return res.status(403).json({ error: 'Cross-tenant access forbidden' });
+            }
+          } catch {
+            // ignore
+          }
+        }
+        return res.status(404).json({ error: 'Lead not found' });
+      }
+
+      if (dbLead.tenant_id !== tenantId && !req.auth?.isPlatformAdmin) {
+        return res.status(403).json({ error: 'Cross-tenant access forbidden' });
+      }
+
+      const callsHistory = await supabaseDataService.calls.getCallsByLead(dbLead.id);
+      const profile = await supabaseDataService.buyerProfiles.getBuyerProfile(tenantId, dbLead.id);
+      const consentStatus = (profile?.metadata as any)?.consent_status || (profile as any)?.consent_status || (dbLead as any).consent_status;
+
+      const eligibilityResult = evaluateCallEligibility({
+        leadId: dbLead.id,
+        tenantId,
+        status: dbLead.status,
+        phone: dbLead.phone,
+        email: dbLead.email,
+        consentStatus,
+        source: dbLead.source,
+        enrichmentAvailable: true,
+        callsHistory,
+      });
+
+      res.json(eligibilityResult);
+    } catch (err: unknown) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Eligibility evaluation failed' });
+    }
+  });
+
+  // Authoritative Lead Activation Endpoint (Phase 9.3.3)
+  app.post('/api/voice/activate', requireAuth(), requireRole('SALES', 'ADMIN', 'OWNER'), async (req, res) => {
+    try {
+      const { leadId } = req.body;
+      if (!leadId) {
+        return res.status(400).json({ error: 'leadId is required' });
+      }
+      const tenantId = req.auth?.tenantId;
+      if (!tenantId) {
+        return res.status(401).json({ error: 'Tenant context missing in authentication' });
+      }
+
+      const activationService = new LeadActivationService();
+      const result = await activationService.activateLead({
+        tenantId,
+        leadId,
+        actor: 'human_operator',
+        correlationId: req.headers['x-correlation-id'] as string,
+      });
+
+      if (result.decision === 'ACTIVATED') {
+        return res.json(result);
+      } else if (result.decision === 'ALREADY_CLAIMED' || result.decision === 'CONCURRENT_ACTIVATION') {
+        return res.status(409).json(result);
+      } else if (result.decision === 'TENANT_MISMATCH' || result.decision === 'LEAD_NOT_FOUND') {
+        return res.status(404).json(result);
+      } else {
+        return res.status(422).json(result);
+      }
+    } catch (err: unknown) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Lead activation failed' });
+    }
+  });
+
+  // Get Calls for Lead (Phase 9.3.3)
+  app.get('/api/voice/calls/lead/:leadId', requireAuth(), async (req, res) => {
+    try {
+      const tenantId = req.auth?.tenantId;
+      const leadId = req.params.leadId;
+      let dbLead = await supabaseDataService.leads.getLeadByLeadId(tenantId || '', leadId);
+      if (!dbLead) {
+        dbLead = await supabaseDataService.leads.getLead(tenantId || '', leadId);
+      }
+      if (!dbLead) {
+        return res.status(404).json({ error: 'Lead not found' });
+      }
+      const calls = await supabaseDataService.calls.getCallsByLead(dbLead.id);
+      res.json(calls);
+    } catch (err: unknown) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to retrieve calls' });
     }
   });
 

@@ -20,13 +20,17 @@ import {
   PhoneForwarded,
 } from 'lucide-react';
 import { GFBuyerLead, DataTruthLevel } from '../types/buyerLead';
-import { callService, CallEligibilityExecutionResult } from '../services/calls/callService';
-import { CallEligibilityResult } from '../services/calls/callEligibility';
-import { supabaseDataService } from '../../app/services/supabase/repositories';
-import { DEFAULT_TENANT_ID } from '../../app/schemas/tenant';
 import { DbBrokerHandoff, Call, CallTranscript } from '../../app/schemas/database';
 import { getRecommendedActionAndSLA } from '../services/brokerDashboardService';
 import { Clock, MessageSquare, Play, Inbox, AlertTriangle } from 'lucide-react';
+
+export interface CallEligibilityResult {
+  decision: string;
+  eligible: boolean;
+  reasons: string[];
+  policyVersion?: string;
+  evaluatedAt?: string;
+}
 
 
 interface BuyerDetailViewProps {
@@ -58,19 +62,28 @@ export const BuyerDetailView: React.FC<BuyerDetailViewProps> = ({
     async function loadWorkspaceData() {
       setIsLoadingWorkspace(true);
       try {
-        const hList = await supabaseDataService.brokerHandoffs.getHandoffsByLeadId(DEFAULT_TENANT_ID, lead.lead_id);
-        if (hList && hList.length > 0) {
-          setHandoff(hList[hList.length - 1]);
+        const hRes = await fetch(`/api/handoff/lead/${lead.lead_id}`);
+        if (hRes.ok) {
+          const hList = await hRes.json();
+          if (hList && hList.length > 0) {
+            setHandoff(hList[hList.length - 1]);
+          }
         }
 
-        const cList = await supabaseDataService.calls.getCallsByLead(DEFAULT_TENANT_ID, lead.lead_id);
-        if (cList && cList.length > 0) {
-          const latestCall = cList[cList.length - 1];
-          setCall(latestCall);
-          
-          const tx = await supabaseDataService.transcripts.getTranscriptByCallId(DEFAULT_TENANT_ID, latestCall.id);
-          if (tx) {
-            setTranscript(tx);
+        const cRes = await fetch(`/api/voice/calls/lead/${lead.lead_id}`);
+        if (cRes.ok) {
+          const cList = await cRes.json();
+          if (cList && cList.length > 0) {
+            const latestCall = cList[cList.length - 1];
+            setCall(latestCall);
+            
+            const txRes = await fetch(`/api/voice/transcripts/${latestCall.id}`);
+            if (txRes.ok) {
+              const tx = await txRes.json();
+              if (tx) {
+                setTranscript(tx);
+              }
+            }
           }
         }
       } catch (e) {
@@ -161,14 +174,13 @@ export const BuyerDetailView: React.FC<BuyerDetailViewProps> = ({
   const handleEvaluateCallEligibility = async () => {
     setIsEvaluatingCalls(true);
     try {
-      const result: CallEligibilityExecutionResult = await callService.evaluateAndPrepareCall(lead.lead_id, {
-        actor: 'human_operator',
-      });
-      setLead(result.canonicalLead);
-      setEligibilityResult(result.eligibility);
-      if (result.mockCallResult) {
-        setMockCallId(result.mockCallResult.callId);
+      const response = await fetch(`/api/voice/eligibility/${lead.lead_id}`);
+      if (!response.ok) {
+        const errJson = await response.json().catch(() => ({}));
+        throw new Error(errJson.error || `Eligibility evaluation failed (${response.status})`);
       }
+      const eligibility = await response.json();
+      setEligibilityResult(eligibility);
     } catch (err: unknown) {
       console.error('Call eligibility evaluation failed:', err);
     } finally {
