@@ -76,6 +76,7 @@ export function createBuyerProfilesRepository(
         qualification_status: input.qualification_status ?? 'PENDING',
         intent_score: input.intent_score ?? null,
         confidence_score: input.confidence_score ?? null,
+        metadata: input.metadata ?? null,
         created_at: now,
         updated_at: now,
       };

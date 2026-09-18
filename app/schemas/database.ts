@@ -75,6 +75,7 @@ export interface BuyerProfile {
   qualification_status: string | null;
   intent_score: number | null;
   confidence_score: number | null;
+  metadata?: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
 }
