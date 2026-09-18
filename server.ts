@@ -21,6 +21,7 @@ import { brokerHandoffService } from './app/services/handoff/brokerHandoffServic
 import { matchingAgent } from './app/agents/MatchingAgent';
 import { LeadActivationService } from './app/services/calls/leadActivationService';
 import { evaluateCallEligibility } from './app/services/calls/callEligibility';
+import { voiceActivationQueueService } from './app/services/calls/voiceActivationQueueService';
 
 import { pipelineRecoveryWorker } from './app/services/pipeline/pipelineRecoveryWorker';
 
@@ -113,6 +114,32 @@ export function createApp(): Express {
       res.json(result);
     } catch (err: unknown) {
       res.status(500).json({ error: err instanceof Error ? err.message : 'Call dispatching failed' });
+    }
+  });
+
+  // Get Voice Activation Actionable Queue (Phase 9.3.4)
+  app.get('/api/voice/queue', requireAuth(), requireRole('SALES', 'ADMIN', 'OWNER'), async (req, res) => {
+    try {
+      const tenantId = req.auth?.tenantId;
+      if (!tenantId) {
+        return res.status(401).json({ error: 'Tenant context missing in authentication' });
+      }
+
+      const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 50;
+      const offset = req.query.offset ? parseInt(req.query.offset as string, 10) : 0;
+      const tier = req.query.tier as string | undefined;
+      const search = req.query.search as string | undefined;
+
+      const queueResult = await voiceActivationQueueService.getQueue(tenantId, {
+        limit,
+        offset,
+        tier,
+        search,
+      });
+
+      res.json(queueResult);
+    } catch (err: unknown) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to retrieve voice activation queue' });
     }
   });
 

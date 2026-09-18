@@ -21,6 +21,7 @@ export const Header: React.FC<HeaderProps> = ({
   const navItems = [
     { id: 'overview', label: 'Overview' },
     { id: 'priority-queue', label: 'Priority Queue' },
+    { id: 'voice-queue', label: 'Voice Queue' },
     { id: 'buyers', label: 'All Buyers' },
     { id: 'buyer-detail', label: 'Buyer Dossier' },
     { id: 'matches', label: 'Project Inventory' },
@@ -29,6 +30,7 @@ export const Header: React.FC<HeaderProps> = ({
   const viewNameMap: Record<string, string> = {
     overview: 'Workspace_Overview_Dashboard',
     'priority-queue': 'SLA_Priority_Action_Queue',
+    'voice-queue': 'Voice_Activation_Queue',
     buyers: 'Filtered_Buyer_Intelligence_List',
     'buyer-detail': 'Canonical_Buyer_Dossier',
     matches: 'Project_Catalog_Fit_Engine',

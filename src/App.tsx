@@ -10,6 +10,7 @@ import { BuyerDetailView } from './components/BuyerDetailView';
 import { ProjectMatchesView } from './components/ProjectMatchesView';
 import { OverviewDashboard } from './components/OverviewDashboard';
 import { PriorityQueueView } from './components/PriorityQueueView';
+import { VoiceActivationQueueView } from './components/VoiceActivationQueueView';
 import { GFBuyerLead } from './types/buyerLead';
 import { leadRepository } from './services/supabase/repositories/leadRepository';
 
@@ -60,6 +61,10 @@ export default function App() {
 
         {activeView === 'priority-queue' && (
           <PriorityQueueView onSelectLead={handleSelectLead} />
+        )}
+
+        {activeView === 'voice-queue' && (
+          <VoiceActivationQueueView onSelectLead={handleSelectLead} />
         )}
 
         {activeView === 'buyers' && (

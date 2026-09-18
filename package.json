@@ -40,7 +40,8 @@
     "test:phase8b6": "tsx tests/phase8b6-pipeline-coordinator.ts",
     "test:phase8b62": "tsx tests/phase8b62-webhook-auto-progression.ts",
     "test:phase8b63": "tsx tests/phase8b63-pipeline-dispatch.ts",
-    "test:phase93-api": "tsx tests/phase93-api-boundary.ts"
+    "test:phase93-api": "tsx tests/phase93-api-boundary.ts",
+    "test:phase934": "tsx tests/phase934-queue.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
