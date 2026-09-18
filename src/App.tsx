@@ -5,17 +5,16 @@
 
 import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header';
-import { LeadImportView } from './components/LeadImportView';
-import { ProcessingView } from './components/ProcessingView';
 import { QualifiedBuyersView } from './components/QualifiedBuyersView';
-import { BrokerCommandCenterView } from './components/BrokerCommandCenterView';
 import { BuyerDetailView } from './components/BuyerDetailView';
 import { ProjectMatchesView } from './components/ProjectMatchesView';
+import { OverviewDashboard } from './components/OverviewDashboard';
+import { PriorityQueueView } from './components/PriorityQueueView';
 import { GFBuyerLead } from './types/buyerLead';
 import { leadRepository } from './services/supabase/repositories/leadRepository';
 
 export default function App() {
-  const [activeView, setActiveView] = useState<string>('import');
+  const [activeView, setActiveView] = useState<string>('overview');
   const [leads, setLeads] = useState<GFBuyerLead[]>([]);
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
 
@@ -27,15 +26,6 @@ export default function App() {
     }
     loadLeads();
   }, []);
-
-  const handleImportSuccess = async (importedLeads: GFBuyerLead[]) => {
-    // Persist new leads into repository
-    for (const lead of importedLeads) {
-      await leadRepository.saveCanonicalLead(lead);
-    }
-    const updated = await leadRepository.getAllCanonicalLeads();
-    setLeads(updated);
-  };
 
   const handleSelectLead = (leadId: string) => {
     setSelectedLeadId(leadId);
@@ -57,53 +47,35 @@ export default function App() {
         activeView={activeView}
         onViewChange={(view) => {
           setActiveView(view);
-          if (view !== 'buyer-detail') {
-            // Keep current lead selected for reference
-          }
         }}
         leadCounts={leadCounts}
       />
 
       <main className="flex-1 bg-slate-50">
-        {activeView === 'import' && (
-          <LeadImportView
-            onImportSuccess={handleImportSuccess}
-            onProceedToProcessing={() => setActiveView('processing')}
-            onSelectLead={(lead) => handleSelectLead(lead.lead_id)}
-          />
+        {activeView === 'overview' && (
+          <OverviewDashboard onNavigate={setActiveView} />
         )}
 
-        {activeView === 'processing' && (
-          <ProcessingView
-            leads={leads}
-            onSelectLead={handleSelectLead}
-          />
+        {activeView === 'priority-queue' && (
+          <PriorityQueueView onSelectLead={handleSelectLead} />
         )}
 
         {activeView === 'buyers' && (
-          <BrokerCommandCenterView
-            onSelectLead={(lead) => handleSelectLead(lead.lead_id)}
-          />
+          <QualifiedBuyersView leads={leads} onSelectLead={handleSelectLead} />
         )}
 
         {activeView === 'buyer-detail' && (
           selectedLead ? (
-            <BuyerDetailView
-              lead={selectedLead}
-              onBack={() => setActiveView('buyers')}
-            />
+            <BuyerDetailView lead={selectedLead} onBack={() => setActiveView('priority-queue')} />
           ) : (
             <div className="max-w-md mx-auto py-16 text-center text-slate-500">
-              No lead selected. Please choose a lead from Qualified Buyers.
+              No lead selected. Please choose a lead from the Priority Queue or All Buyers.
             </div>
           )
         )}
 
         {activeView === 'matches' && (
-          <ProjectMatchesView
-            leads={leads}
-            onSelectLead={handleSelectLead}
-          />
+          <ProjectMatchesView leads={leads} onSelectLead={handleSelectLead} />
         )}
       </main>
 

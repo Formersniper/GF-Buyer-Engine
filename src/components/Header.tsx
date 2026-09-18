@@ -19,19 +19,19 @@ export const Header: React.FC<HeaderProps> = ({
   leadCounts,
 }) => {
   const navItems = [
-    { id: 'import', label: '01 LEAD INTAKE' },
-    { id: 'processing', label: '02 PIPELINE PROCESSING' },
-    { id: 'buyers', label: '03 QUALIFIED BUYERS' },
-    { id: 'buyer-detail', label: '04 BUYER PROFILE' },
-    { id: 'matches', label: '05 PROJECT FIT' },
+    { id: 'overview', label: 'Overview' },
+    { id: 'priority-queue', label: 'Priority Queue' },
+    { id: 'buyers', label: 'All Buyers' },
+    { id: 'buyer-detail', label: 'Buyer Dossier' },
+    { id: 'matches', label: 'Project Inventory' },
   ];
 
   const viewNameMap: Record<string, string> = {
-    import: 'Phase1_Lead_Intake_Raw_CSV',
-    processing: 'Phase1_Telemetry_Pipeline_Funnel',
-    buyers: 'Phase8B_Broker_Command_Center_Workspace',
-    'buyer-detail': 'Phase1_Canonical_Buyer_Fact_Record',
-    matches: 'Phase1_Project_Catalog_Fit_Engine',
+    overview: 'Workspace_Overview_Dashboard',
+    'priority-queue': 'SLA_Priority_Action_Queue',
+    buyers: 'Filtered_Buyer_Intelligence_List',
+    'buyer-detail': 'Canonical_Buyer_Dossier',
+    matches: 'Project_Catalog_Fit_Engine',
   };
 
   return (

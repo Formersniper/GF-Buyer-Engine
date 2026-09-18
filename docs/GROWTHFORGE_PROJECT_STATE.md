@@ -55,6 +55,25 @@ Raw Lead
 
 ## 3. PHASE HISTORY & COMMIT CHECKPOINTS
 
+**CURRENT_PHASE:** Phase 9.1
+**CURRENT_STATUS:** FROZEN
+
+**NEXT_PHASE:** Phase 9.2 — Client Onboarding + Lead Intake
+
+- **Phase 9.1 (Commercial Buyer Intelligence Workspace):**
+  - **Purpose:** Implement the Commercial Buyer Intelligence Workspace.
+  - **Implemented:**
+    - Overview Dashboard
+    - SLA Priority Queue
+    - All Buyers
+    - Buyer Dossier
+    - Project Inventory
+    - Commercial navigation
+    - Provenance/truth badges
+    - Canonical scoring/qualification/SLA consumption
+  - **Verification:** Epistemic presentation correctly displays CONFIRMED, KNOWN, INFERRED, UNKNOWN, and AI_RECOMMENDED. Tenant isolation preserved. Regression suites passed.
+  - **Status:** **FROZEN**
+
 - **Phase 8B.4 (Database & RLS Hardening):**  
   - Controlled database/RLS remediation, CASE-guarded UUID validation, multi-tenant app_metadata verification.
   - Status: **FROZEN**
