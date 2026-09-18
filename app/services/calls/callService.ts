@@ -140,23 +140,28 @@ export class CallService {
       },
     });
 
-    // 4. Update workflow status to CALL_ELIGIBILITY if starting from ENRICHED
-    if (previousStatus === 'ENRICHED') {
+    // 4. Update workflow status to CALL_ELIGIBILITY if starting from ENRICHED or RESOLVED
+    if (previousStatus === 'ENRICHED' || previousStatus === 'RESOLVED') {
       await supabaseDataService.leads.updateLead(dbLead.id, { status: 'CALL_ELIGIBILITY' });
     }
 
-    // 5. Evaluate deterministic eligibility policy
+    // 5. Retrieve existing call history for cooldown and max attempt compliance evaluation
+    const callsHistory = await supabaseDataService.calls.getCallsByLead(dbLead.id);
+
+    // 6. Evaluate deterministic eligibility and compliance policy
     const eligibilityResult = evaluateCallEligibility({
       leadId: dbLead.id,
+      tenantId: dbLead.tenant_id,
       status: previousStatus,
       phone: canonicalBefore.identity.phone,
       email: canonicalBefore.identity.email,
       consentStatus: consentStatus,
       source: dbLead.source,
       enrichmentAvailable: true,
+      callsHistory,
     });
 
-    // 6. Record CALL_ELIGIBILITY_DECIDED audit event
+    // 7. Record CALL_ELIGIBILITY_DECIDED audit event
     await supabaseDataService.leadEvents.appendLeadEvent({
       lead_id: dbLead.id,
       event_type: 'CALL_ELIGIBILITY_DECIDED',
@@ -167,19 +172,23 @@ export class CallService {
         evaluated_at: eligibilityResult.evaluatedAt,
         phone_format_valid: eligibilityResult.phone_format_valid,
         consent_state: eligibilityResult.consent_state,
+        compliance: eligibilityResult.compliance,
         actor,
       },
     });
 
-    // 7. Transition workflow state based on evaluation
+    // 8. Transition workflow state based on evaluation
     let targetStatus: WorkflowStatus;
     if (eligibilityResult.decision === 'ELIGIBLE') {
       targetStatus = 'CALL_PENDING';
     } else if (eligibilityResult.decision === 'REQUIRES_REVIEW') {
       targetStatus = 'REQUIRES_REVIEW';
     } else {
-      // NOT_ELIGIBLE: if evaluated from ENRICHED, route to NURTURE; otherwise preserve current failure/raw state
-      targetStatus = previousStatus === 'ENRICHED' ? 'NURTURE' : (previousStatus as WorkflowStatus);
+      // NOT_ELIGIBLE: if evaluated from ENRICHED or RESOLVED, route to NURTURE; otherwise preserve current failure/raw state
+      targetStatus =
+        previousStatus === 'ENRICHED' || previousStatus === 'RESOLVED'
+          ? 'NURTURE'
+          : (previousStatus as WorkflowStatus);
     }
 
     await supabaseDataService.leads.updateLead(dbLead.id, { status: targetStatus });
