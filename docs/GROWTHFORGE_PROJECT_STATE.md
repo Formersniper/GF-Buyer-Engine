@@ -275,11 +275,22 @@ The product boundary remains strictly:
 ## 12. CURRENT REPOSITORY STATUS
 
 ```yaml
-CURRENT_PHASE: Phase 8B.7.10
-CURRENT_STATUS: FROZEN
+CURRENT_PHASE: Phase 9.0
+CURRENT_STATUS: COMPLETE (Product Contract & Commercial Architecture)
 LAST_FROZEN_PHASE: Phase 8B.7.10
-NEXT_PHASE: Phase 8B.7 durable execution/recovery hardening COMPLETE. Future work moves to the commercial/product layer.
+NEXT_PHASE: Phase 9.1 — Commercial UX / Buyer Intelligence Workspace
 ```
+
+### Phase 9.0 — Commercial Product Contract (COMPLETE)
+- **Authoritative Contract Document:** `docs/PHASE_9_COMMERCIAL_PRODUCT_CONTRACT.md`
+- **Objective:** Defined and frozen the commercial and functional contract for the first client-testable version of GrowthForge Buyer Intelligence.
+- **Architectural Scope:** Zero modifications to frozen Phase 8B execution engine, database schema, or migrations.
+- **Key Commercial Decisions:**
+  - **Primary ICP:** Mid-Sized Real-Estate Brokerages & Channel Partners (15–50 agents, 1,000–5,000 raw digital leads/month).
+  - **Core Product Formula:** "GrowthForge helps mid-sized real-estate brokerages and channel partners turn unvetted digital marketing leads into verified, scored buyer dossiers matched to active inventory."
+  - **Truth Contract:** Strict enforcement of `CONFIRMED` (verbatim transcript evidence) vs `INFERRED` (public Scout enrichment) vs `AI_RECOMMENDED` (inventory matches with `buyer_confirmed: false`).
+  - **Value Metric:** Verified Qualified Buyer Output Rate; hybrid pricing hypothesis (Platform Subscription + Per-Qualified-Buyer fee).
+  - **Pilot Contract:** 30-day, 1,000-lead pilot program targeting 2–3 channel partners.
 
 ### Verified Production Baseline
 - **Phase 8B.7.9 Baseline Commit:** `ecdc9b970a40076388fcf1d61991503f7173a128`
