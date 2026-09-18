@@ -8,6 +8,7 @@
 import { supabaseDataService } from '../supabase/repositories';
 import { resolveLead, RawLeadRecordInput } from './leadResolver';
 import { Lead } from '../../schemas/database';
+import { TenantScope, TenantContext } from '../supabase/repos/helpers';
 
 export interface CSVRowError {
   row: number;
@@ -89,7 +90,7 @@ function parseCSVLine(line: string): string[] {
 /**
  * Ingests a CSV string, parses, validates, deduplicates, and saves leads to Supabase.
  */
-export async function ingestCSVLeads(csvContent: string): Promise<ImportSummary> {
+export async function ingestCSVLeads(scope: TenantScope | TenantContext, csvContent: string): Promise<ImportSummary> {
   const parsedRows = parseCSV(csvContent);
 
   const summary: ImportSummary = {
@@ -111,9 +112,6 @@ export async function ingestCSVLeads(csvContent: string): Promise<ImportSummary>
     return summary;
   }
 
-  // Fetch all existing leads from Supabase repository for accurate deduplication
-  const existingLeads = await supabaseDataService.leads.listLeads();
-
   for (let i = 0; i < parsedRows.length; i++) {
     const rowNumber = i + 2; // 1-indexed including header row
     const row = parsedRows[i];
@@ -134,7 +132,14 @@ export async function ingestCSVLeads(csvContent: string): Promise<ImportSummary>
     };
 
     try {
-      const resolution = resolveLead(rawInput, existingLeads);
+      let existingLeads: any[] = [];
+      const matchedLead = await supabaseDataService.leads.getLeadByPhoneOrEmail(scope, phone, email);
+      if (matchedLead) {
+        existingLeads.push(matchedLead);
+      }
+      
+      const suggestedLeadId = `GF-${new Date().getFullYear()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+      const resolution = resolveLead(rawInput, existingLeads, suggestedLeadId);
 
       if (resolution.outcome === 'INVALID') {
         summary.invalid++;
@@ -152,7 +157,7 @@ export async function ingestCSVLeads(csvContent: string): Promise<ImportSummary>
 
         // Append deduplication event in lead_events
         if (resolution.matchedExistingLead) {
-          await supabaseDataService.leadEvents.appendLeadEvent({
+          await supabaseDataService.leadEvents.appendLeadEvent(scope, {
             lead_id: resolution.matchedExistingLead.id,
             event_type: 'DUPLICATE_INGESTION_DETECTED',
             event_data: {
@@ -170,7 +175,7 @@ export async function ingestCSVLeads(csvContent: string): Promise<ImportSummary>
         summary.created++;
 
         // Create lead in REQUIRES_REVIEW status
-        const created = await supabaseDataService.leads.createLead({
+        const created = await supabaseDataService.leads.createLead(scope, {
           lead_id: resolution.leadId,
           name: resolution.normalized.name,
           phone: resolution.normalized.phone,
@@ -180,7 +185,7 @@ export async function ingestCSVLeads(csvContent: string): Promise<ImportSummary>
           status: 'REQUIRES_REVIEW',
         });
 
-        await supabaseDataService.leadEvents.appendLeadEvent({
+        await supabaseDataService.leadEvents.appendLeadEvent(scope, {
           lead_id: created.id,
           event_type: 'AMBIGUOUS_IDENTITY_FLAGGED',
           event_data: {
@@ -189,13 +194,12 @@ export async function ingestCSVLeads(csvContent: string): Promise<ImportSummary>
           },
         });
 
-        existingLeads.push(created);
         summary.createdLeads.push(created);
         continue;
       }
 
       // NEW Lead
-      const created = await supabaseDataService.leads.createLead({
+      const created = await supabaseDataService.leads.createLead(scope, {
         lead_id: resolution.leadId,
         name: resolution.normalized.name,
         phone: resolution.normalized.phone,
@@ -206,7 +210,7 @@ export async function ingestCSVLeads(csvContent: string): Promise<ImportSummary>
       });
 
       // Log initial ingestion event
-      await supabaseDataService.leadEvents.appendLeadEvent({
+      await supabaseDataService.leadEvents.appendLeadEvent(scope, {
         lead_id: created.id,
         event_type: 'LEAD_INGESTED',
         event_data: {
@@ -217,7 +221,6 @@ export async function ingestCSVLeads(csvContent: string): Promise<ImportSummary>
         },
       });
 
-      existingLeads.push(created);
       summary.createdLeads.push(created);
       summary.accepted++;
       summary.created++;

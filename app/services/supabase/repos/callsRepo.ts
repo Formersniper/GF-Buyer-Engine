@@ -4,7 +4,7 @@ import { logger } from "../../security/logger";
  */
 
 import { Call } from '../../../schemas/database';
-import { getSupabaseClient } from '../client';
+import { getSupabaseClient, getSupabaseAdminClient } from '../client';
 import { 
   TenantScope,
   TenantContext,
@@ -51,7 +51,7 @@ export function createCallsRepository(
         throw new TenantMismatchError(`Cannot create call for lead ${input.lead_id}: lead not found in authorized tenant context.`);
       }
 
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       const now = new Date().toISOString();
       const id = input.id || generateUUID();
       const tenantId = scope.tenantId || lead.tenant_id;
@@ -101,7 +101,7 @@ export function createCallsRepository(
     getCall: async (scopeOrId, maybeId) => {
       const { scope, id: idOrProviderCallId } = parseScopeAndId(scopeOrId, maybeId);
       const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrProviderCallId);
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
 
       if (client) {
         try {
@@ -143,7 +143,7 @@ export function createCallsRepository(
 
     getCallByProviderCallId: async (scopeOrProviderCallId, maybeProviderCallId) => {
       const { scope, id: providerCallId } = parseScopeAndId(scopeOrProviderCallId, maybeProviderCallId);
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         try {
           let query = client
@@ -182,7 +182,7 @@ export function createCallsRepository(
 
     getCallsByLead: async (scopeOrLeadId, maybeLeadId) => {
       const { scope, id: leadId } = parseScopeAndId(scopeOrLeadId, maybeLeadId);
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         try {
           let query = client.from('calls').select('*').eq('lead_id', leadId);
@@ -228,7 +228,7 @@ export function createCallsRepository(
         updates = idOrUpdates as Partial<Omit<Call, 'id' | 'lead_id' | 'created_at'>>;
       }
 
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         try {
           let query = client.from('calls').update(updates).eq('id', id);

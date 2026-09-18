@@ -15,9 +15,10 @@ export const QualifiedBuyersView: React.FC<QualifiedBuyersViewProps> = ({
 
   // Filter leads that have gone through qualification or scoring
   const qualifiedLeads = leads.filter((l) => {
-    const qual = l.lead_intelligence.qualification;
+    if (!l) return false;
+    const qual = l.lead_intelligence?.qualification || '';
     if (filter === 'ALL') {
-      return ['HOT', 'WARM', 'NURTURE'].includes(qual) || l.lead_intelligence.intent_score > 0;
+      return ['HOT', 'WARM', 'NURTURE'].includes(qual) || (l.lead_intelligence?.intent_score ?? 0) > 0;
     }
     return qual === filter;
   });
@@ -170,16 +171,16 @@ export const QualifiedBuyersView: React.FC<QualifiedBuyersViewProps> = ({
                     {/* Score */}
                     <td className="py-3 px-4">
                       <div className="text-sm font-bold text-slate-900 font-mono">
-                        {lead.lead_intelligence.intent_score}
+                        {lead.lead_intelligence?.intent_score ?? 0}
                       </div>
                       <div className="text-[10px] text-slate-500 font-mono">
-                        {Math.round(lead.lead_intelligence.confidence * 100)}% conf
+                        {Math.round((lead.lead_intelligence?.confidence ?? 0) * 100)}% conf
                       </div>
                     </td>
 
                     {/* Qualification */}
                     <td className="py-3 px-4">
-                      {getQualificationBadge(lead.lead_intelligence.qualification)}
+                      {getQualificationBadge(lead.lead_intelligence?.qualification || 'UNQUALIFIED')}
                     </td>
 
                     {/* Best Project */}

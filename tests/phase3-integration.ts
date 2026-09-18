@@ -280,7 +280,7 @@ sys.exit(0)
       source: 'PORTAL_INQUIRY',
     };
 
-    const ingested = await leadService.ingestRawLead(rawLead);
+    const ingested = await leadService.ingestRawLead('00000000-0000-0000-0000-000000000001', rawLead);
 
     // Add enrichment with inferred company and location
     const dbLead = await supabaseDataService.leads.getLeadByLeadId(ingested.lead_id);
@@ -332,7 +332,7 @@ sys.exit(0)
       source: 'CAMPAIGN_FB',
     };
 
-    const ingested = await leadService.ingestRawLead(rawLead);
+    const ingested = await leadService.ingestRawLead('00000000-0000-0000-0000-000000000001', rawLead);
     const dbLead = await supabaseDataService.leads.getLeadByLeadId(ingested.lead_id);
     if (!dbLead) throw new Error('Lead missing');
 
@@ -376,7 +376,7 @@ sys.exit(0)
       source: 'WEB_FORM',
     };
 
-    const ingested = await leadService.ingestRawLead(rawLead);
+    const ingested = await leadService.ingestRawLead('00000000-0000-0000-0000-000000000001', rawLead);
     const dbLead = await supabaseDataService.leads.getLeadByLeadId(ingested.lead_id);
     if (!dbLead) throw new Error('Lead missing');
 
@@ -417,7 +417,7 @@ sys.exit(0)
       email: `meera.${timestamp}@example.com`,
     };
 
-    const ingested = await leadService.ingestRawLead(rawLead);
+    const ingested = await leadService.ingestRawLead('00000000-0000-0000-0000-000000000001', rawLead);
     const dbLead = await supabaseDataService.leads.getLeadByLeadId(ingested.lead_id);
     if (!dbLead) throw new Error('Lead missing');
 
@@ -444,7 +444,7 @@ sys.exit(0)
   try {
     const timestamp = Date.now();
     // Ingest new lead
-    const lead = await leadService.ingestRawLead({
+    const lead = await leadService.ingestRawLead('00000000-0000-0000-0000-000000000001', {
       full_name: 'Dr. Siddharth Joshi',
       phone: `+9196${timestamp.toString().slice(-8)}`,
       email: `siddharth.${timestamp}@aiims.edu`,

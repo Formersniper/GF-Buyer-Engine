@@ -55,10 +55,40 @@ Raw Lead
 
 ## 3. PHASE HISTORY & COMMIT CHECKPOINTS
 
-**CURRENT_PHASE:** Phase 9.1
+**CURRENT_PHASE:** Phase 9.2
 **CURRENT_STATUS:** FROZEN
 
-**NEXT_PHASE:** Phase 9.2 — Client Onboarding + Lead Intake
+**NEXT_MILESTONE:**
+Phase 9.3 — TO BE DEFINED
+
+- **Phase 9.2 (Client Onboarding + Lead Intake):**
+  - **Purpose:** Implement real-world client onboarding, project and inventory setup, API-key secured inbound lead intake, CSV intake hardening, RLS table isolation, and CRM configuration.
+  - **Client Onboarding Capability:**
+    - Real-estate project catalog setup with name, developer, location, configuration, pricing, and amenities.
+    - Project inventory unit configuration with unit numbers, floor plans, pricing, and availability states.
+    - Intake source configuration with API key provisioning, inbound webhook endpoints, and CSV batch templates.
+    - CRM export configuration wrapper with endpoint URL, auth type, headers, and target systems.
+  - **Inbound Lead Intake Capability:**
+    - Canonical HTTP POST route (`/api/v1/inbound/lead`) for real-time lead ingestion from portals, landing pages, and lead providers.
+    - Transport idempotency using `webhook_events` tracking `source_event_id` and payload hashing to prevent duplicate lead processing.
+    - Canonical resolution boundary: Every inbound lead flows through `resolveLead()` for phone/email normalization, identity reconciliation, and deduplication.
+    - Pipeline boundary preserved: Inbound webhook stages leads into canonical storage without triggering or creating duplicate `pipeline_executions`. Voice qualification and durable pipeline progression boundaries remain completely intact.
+  - **API-Key Authentication & Tenant Scoping:**
+    - API keys are hashed with SHA-256 (`api_key_hash`) and verified against the tenant record; plaintext keys are never stored or logged.
+    - Tenant context (`req.auth.tenant_id`) is strictly bound to the authenticated API key or verified JWT; requests attempting to override `tenant_id` via body or query parameters fail closed.
+  - **CSV Intake Hardening:**
+    - Replaced unrestricted full-table scans with targeted, tenant-scoped phone and email lookups (`findExistingByContactInfo`).
+    - Enforced tenant boundaries during batch row normalization and deduplication.
+  - **RLS Hardening (Migration `013_harden_001_rls.sql`):**
+    - Enabled RLS and dropped permissive public policies across all 10 core tables: `leads`, `lead_enrichment`, `calls`, `buyer_profiles`, `buyer_preferences`, `projects`, `project_matches`, `buyer_scores`, `lead_events`, `webhook_events`.
+    - Enforced tenant-scoped policies checking `auth.jwt() -> 'app_metadata' ->> 'tenant_id' = tenant_id` with regex UUID validation. Missing or invalid claims fail closed.
+  - **Verified Limitations:**
+    - Automatic voice qualification calls are not triggered upon inbound intake; inbound leads remain in `INGESTED` / `DISPATCHED` staged state pending call scheduling.
+    - CRM export configurations wrap and configure dispatch endpoints but do not add unrequested generic CRM contact management tools.
+  - **Test Suite Verification:**
+    - `tests/phase92-lead-intake.ts`: PASS (100% verification across API auth, webhook idempotency, CSV intake, and RLS hardening)
+    - Full regression suites (8B.7.9, 8B.7.8, 8B.7.5, 8B.7.4, 8B.7.3, 8B.6.3, 8B.6.2, 8B.6.1): PASS (100%)
+  - **Status:** **FROZEN**
 
 - **Phase 9.1 (Commercial Buyer Intelligence Workspace):**
   - **Purpose:** Implement the Commercial Buyer Intelligence Workspace.

@@ -11,6 +11,7 @@
  */
 
 import { Request, Response, NextFunction } from 'express';
+import crypto from 'crypto';
 import {
   AuthContext,
   UserRole,
@@ -18,6 +19,7 @@ import {
   AuthErrorResponse,
 } from '../schemas/auth';
 import { getSupabaseClient } from '../services/supabase/client';
+import { supabaseDataService } from '../services/supabase/repositories';
 
 // ==========================================
 // 1. ROLE HIERARCHY & AUTHORIZATION
@@ -82,7 +84,7 @@ export class SupabaseJwtAuthenticator implements JwtAuthenticator {
       return {
         userId: user.id,
         email: user.email,
-        tenantId: undefined, // Resolved via memberships in Phase 8A.2
+        tenantId: appMetadata.tenant_id as string | undefined, // Phase 9.2: Resolved authoritatively from app_metadata
         role,
         isPlatformAdmin,
         authMethod: 'JWT',
@@ -102,10 +104,39 @@ export interface ApiKeyAuthenticator {
 }
 
 export class DefaultApiKeyAuthenticator implements ApiKeyAuthenticator {
-  public async validateApiKey(_apiKey: string): Promise<AuthContext | null> {
-    // Phase 8A.1: The tenant_api_keys table and hashing schema are scheduled for Phase 8A.2.
-    // In Phase 8A.1, this operates in fail-closed mode: no plaintext or mock keys are accepted.
-    return null;
+  public async validateApiKey(apiKey: string): Promise<AuthContext | null> {
+    if (!apiKey || typeof apiKey !== 'string' || apiKey.trim() === '') {
+      return null;
+    }
+
+    try {
+      // 1. Hash the incoming API key deterministically (SHA-256 hex)
+      const keyHash = crypto.createHash('sha256').update(apiKey.trim()).digest('hex');
+
+      // 2. Query the tenant_api_keys table using the hash
+      const keyRecord = await supabaseDataService.tenantApiKeys.getApiKeyByHash(keyHash);
+      if (!keyRecord) {
+        return null; // Invalid key
+      }
+
+      // 3. Verify it's not revoked
+      if (keyRecord.revoked_at) {
+        return null;
+      }
+
+      // 4. Construct authoritative AuthContext
+      const role = (keyRecord as any).role as UserRole || 'ADMIN';
+      return {
+        userId: 'API_KEY_SYSTEM_USER', // Or could leave undefined if it's strictly system
+        email: undefined,
+        tenantId: keyRecord.tenant_id,
+        role,
+        isPlatformAdmin: false,
+        authMethod: 'API_KEY',
+      };
+    } catch (err) {
+      return null;
+    }
   }
 }
 

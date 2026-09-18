@@ -4,7 +4,7 @@ import { logger } from "../../security/logger";
  */
 
 import { DbProject, DbProjectMatch } from '../../../schemas/database';
-import { getSupabaseClient } from '../client';
+import { getSupabaseClient, getSupabaseAdminClient } from '../client';
 import { 
   TenantScope,
   TenantContext,
@@ -51,7 +51,7 @@ export function createProjectsRepository(
       const scope = resolveEffectiveTenantScope(maybeProject !== undefined ? (scopeOrProject as TenantScope) : undefined);
       const input = maybeProject !== undefined ? maybeProject : (scopeOrProject as any);
 
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       const now = new Date().toISOString();
       const id = input.id || generateUUID();
       const tenantId = scope.tenantId || input.tenant_id;
@@ -108,7 +108,7 @@ export function createProjectsRepository(
 
     getProject: async (scopeOrId, maybeId) => {
       const { scope, id } = parseScopeAndId(scopeOrId, maybeId);
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         try {
           let query = client.from('projects').select('*').eq('id', id);
@@ -140,7 +140,7 @@ export function createProjectsRepository(
 
     getProjectByCode: async (scopeOrCode, maybeCode) => {
       const { scope, id: projectCode } = parseScopeAndId(scopeOrCode, maybeCode);
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         try {
           let query = client.from('projects').select('*').eq('project_code', projectCode);
@@ -175,7 +175,7 @@ export function createProjectsRepository(
 
     listProjects: async (scopeOrFilter, maybeFilter) => {
       const { scope, filter } = parseScopeAndFilter(scopeOrFilter, maybeFilter);
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         try {
           let query = client.from('projects').select('*');
@@ -236,7 +236,7 @@ export function createProjectMatchesRepository(
         throw new TenantMismatchError(`Cannot upsert project match for lead ${input.lead_id}: lead not found in authorized tenant context.`);
       }
 
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       const now = new Date().toISOString();
       const id = input.id || generateUUID();
       const tenantId = scope.tenantId || lead.tenant_id;
@@ -288,7 +288,7 @@ export function createProjectMatchesRepository(
 
     getProjectMatches: async (scopeOrLeadId, maybeLeadId) => {
       const { scope, id: leadId } = parseScopeAndId(scopeOrLeadId, maybeLeadId);
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         try {
           let query = client.from('project_matches').select('*').eq('lead_id', leadId);

@@ -9,7 +9,7 @@ import {
   ConversationExtraction,
   BuyerQualification,
 } from '../../../schemas/database';
-import { getSupabaseClient } from '../client';
+import { getSupabaseClient, getSupabaseAdminClient } from '../client';
 import { 
   TenantScope,
   TenantContext,
@@ -173,7 +173,7 @@ export function createCallTranscriptsRepository(
         throw new TenantMismatchError(`Cannot create transcript for lead ${input.lead_id}: lead not found in authorized tenant context.`);
       }
 
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       const now = new Date().toISOString();
       const id = input.id || generateUUID();
       const tenantId = scope.tenantId || lead.tenant_id;
@@ -221,7 +221,7 @@ export function createCallTranscriptsRepository(
 
     getTranscript: async (scopeOrId, maybeId) => {
       const { scope, id } = parseScopeAndId(scopeOrId, maybeId);
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         try {
           let query = client.from('call_transcripts').select('*').eq('id', id);
@@ -242,7 +242,7 @@ export function createCallTranscriptsRepository(
 
     getTranscriptByCallId: async (scopeOrCallId, maybeCallId) => {
       const { scope, id: callId } = parseScopeAndId(scopeOrCallId, maybeCallId);
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         try {
           let query = client.from('call_transcripts').select('*').eq('call_id', callId);
@@ -266,7 +266,7 @@ export function createCallTranscriptsRepository(
 
     getTranscriptByProviderCallId: async (scopeOrProviderCallId, maybeProviderCallId) => {
       const { scope, id: providerCallId } = parseScopeAndId(scopeOrProviderCallId, maybeProviderCallId);
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         try {
           let query = client
@@ -293,7 +293,7 @@ export function createCallTranscriptsRepository(
 
     getTranscriptsByLeadId: async (scopeOrLeadId, maybeLeadId) => {
       const { scope, id: leadId } = parseScopeAndId(scopeOrLeadId, maybeLeadId);
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         try {
           let query = client
@@ -355,7 +355,7 @@ export function createConversationExtractionsRepository(
         updated_at: now,
       };
 
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         try {
           let queryExisting = client
@@ -399,7 +399,7 @@ export function createConversationExtractionsRepository(
         extractionsStore.set(id, updated);
         return updated;
       }
-      const supabase = getSupabaseClient();
+      const supabase = getSupabaseAdminClient() || getSupabaseClient();
       if (!supabase) throw new Error('Supabase client not initialized');
       const { data, error } = await supabase
         .from('conversation_extractions')
@@ -413,7 +413,7 @@ export function createConversationExtractionsRepository(
 
     getExtraction: async (scopeOrId, maybeId) => {
       const { scope, id } = parseScopeAndId(scopeOrId, maybeId);
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         try {
           let query = client.from('conversation_extractions').select('*').eq('id', id);
@@ -450,7 +450,7 @@ export function createConversationExtractionsRepository(
         promptVersion = maybeSchema;
       }
 
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         try {
           let query = client.from('conversation_extractions').select('*').eq('transcript_id', transcriptId);
@@ -482,7 +482,7 @@ export function createConversationExtractionsRepository(
 
     getExtractionByCallId: async (scopeOrCallId, maybeCallId) => {
       const { scope, id: callId } = parseScopeAndId(scopeOrCallId, maybeCallId);
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         try {
           let query = client
@@ -509,7 +509,7 @@ export function createConversationExtractionsRepository(
 
     getExtractionsByLeadId: async (scopeOrLeadId, maybeLeadId) => {
       const { scope, id: leadId } = parseScopeAndId(scopeOrLeadId, maybeLeadId);
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         try {
           let query = client
@@ -567,7 +567,7 @@ export function createBuyerQualificationsRepository(
         updated_at: now,
       };
 
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         try {
           let queryExisting = client
@@ -605,7 +605,7 @@ export function createBuyerQualificationsRepository(
 
     getQualification: async (scopeOrId, maybeId) => {
       const { scope, id } = parseScopeAndId(scopeOrId, maybeId);
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         try {
           let query = client.from('buyer_qualifications').select('*').eq('id', id);
@@ -643,7 +643,7 @@ export function createBuyerQualificationsRepository(
         ruleVersion = extractionIdOrRule;
       }
 
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         try {
           let query = client.from('buyer_qualifications').select('*').eq('extraction_id', extractionId);
@@ -671,7 +671,7 @@ export function createBuyerQualificationsRepository(
 
     getQualificationsByLeadId: async (scopeOrLeadId, maybeLeadId) => {
       const { scope, id: leadId } = parseScopeAndId(scopeOrLeadId, maybeLeadId);
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         try {
           let query = client

@@ -158,7 +158,7 @@ Ananya Birla,+91 98201 55667,ananya.b@adityabirla.com,Forbes Inquiry,CAMP_UB_01
 Vikramaditya Oberoi,98110 44332,v.oberoi@luxuryhotels.in,HNI Brokerage,REF_EXEC_02
 Bad Row Missing All,,,Unknown,`;
 
-  const importResult = await ingestCSVLeads(sampleCSVContent);
+  const importResult = await ingestCSVLeads('00000000-0000-0000-0000-000000000001', sampleCSVContent);
   assert(importResult.total_rows === 3, 'Processed 3 total CSV rows', `got ${importResult.total_rows}`);
   assert(importResult.accepted === 2, 'Accepted 2 valid rows', `got ${importResult.accepted}`);
   assert(importResult.invalid === 1, 'Flagged 1 invalid empty row', `got ${importResult.invalid}`);
@@ -184,7 +184,7 @@ Bad Row Missing All,,,Unknown,`;
   console.log('\n--- 8. Re-ingesting Duplicate Lead ---');
   const duplicateCSV = `name,phone,email,source
 Ananya Birla,+91 98201 55667,ananya.b@adityabirla.com,Repeat Web Form`;
-  const dupImportResult = await ingestCSVLeads(duplicateCSV);
+  const dupImportResult = await ingestCSVLeads('00000000-0000-0000-0000-000000000001', duplicateCSV);
   assert(dupImportResult.duplicates === 1, 'Correctly detected duplicate on second ingestion');
   assert(dupImportResult.created === 0, 'Zero new records created for duplicate');
 

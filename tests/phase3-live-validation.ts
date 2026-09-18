@@ -101,7 +101,7 @@ async function runControlledLiveValidation() {
   if (!candidate) {
     // Ingest a controlled test lead
     const timestamp = Date.now();
-    const created = await leadService.ingestRawLead({
+    const created = await leadService.ingestRawLead('00000000-0000-0000-0000-000000000001', {
       full_name: 'Dr. Arjun Mehta',
       phone: `+9198${timestamp.toString().slice(-8)}`,
       email: `arjun.${timestamp}@apollohospitals.org`,

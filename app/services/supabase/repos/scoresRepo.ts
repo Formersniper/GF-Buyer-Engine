@@ -4,7 +4,7 @@ import { logger } from "../../security/logger";
  */
 
 import { BuyerScore, BuyerScoreRecord, PriorityQueueItem } from '../../../schemas/database';
-import { getSupabaseClient } from '../client';
+import { getSupabaseClient, getSupabaseAdminClient } from '../client';
 import { 
   TenantScope,
   TenantContext,
@@ -65,7 +65,7 @@ export function createBuyerScoresRepository(
         throw new TenantMismatchError(`Cannot create buyer score for lead ${input.lead_id}: lead not found in authorized tenant context.`);
       }
 
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       const now = new Date().toISOString();
       const id = input.id || generateUUID();
       const tenantId = scope.tenantId || lead.tenant_id;
@@ -118,7 +118,7 @@ export function createBuyerScoresRepository(
         throw new TenantMismatchError(`Cannot create buyer score record for lead ${input.lead_id}: lead not found in authorized tenant context.`);
       }
 
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       const now = new Date().toISOString();
       const id = input.id || generateUUID();
       const compScore = input.score ?? input.composite_score ?? input.total_score ?? 0;
@@ -209,7 +209,7 @@ export function createBuyerScoresRepository(
 
     getBuyerScore: async (scopeOrId, maybeId) => {
       const { scope, id } = parseScopeAndId(scopeOrId, maybeId);
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         try {
           let query = client.from('buyer_scores').select('*').eq('id', id);
@@ -249,7 +249,7 @@ export function createBuyerScoresRepository(
         ruleVersion = qualIdOrRuleVersion;
       }
 
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         try {
           let query = client.from('buyer_scores').select('*').eq('qualification_id', qualificationId);
@@ -279,7 +279,7 @@ export function createBuyerScoresRepository(
 
     getBuyerScoresByLeadId: async (scopeOrLeadId, maybeLeadId) => {
       const { scope, id: leadId } = parseScopeAndId(scopeOrLeadId, maybeLeadId);
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         try {
           let query = client
@@ -304,7 +304,7 @@ export function createBuyerScoresRepository(
 
     getLatestBuyerScore: async (scopeOrLeadId, maybeLeadId) => {
       const { scope, id: leadId } = parseScopeAndId(scopeOrLeadId, maybeLeadId);
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         try {
           let query = client
@@ -340,7 +340,7 @@ export function createBuyerScoresRepository(
 
     getLatestBuyerScoreRecord: async (scopeOrLeadId, maybeLeadId) => {
       const { scope, id: leadId } = parseScopeAndId(scopeOrLeadId, maybeLeadId);
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         try {
           let query = client

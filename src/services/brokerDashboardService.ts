@@ -153,25 +153,26 @@ export function getRecommendedActionAndSLA(
   }
 
   // Fallback heuristic based on canonical qualification / score
-  if (qual === 'HOT' || workflowStatus === 'HOT' || lead.lead_intelligence?.intent_score >= 90) {
+  const intentScore = lead?.lead_intelligence?.intent_score ?? 0;
+  if (qual === 'HOT' || workflowStatus === 'HOT' || intentScore >= 90) {
     return {
       action: 'CONTACT NOW',
       slaLabel: '15-Minute SLA',
       slaMinutes: 15,
       assignedRole: 'SENIOR_SALES_ADVISOR',
       urgency: 'CRITICAL',
-      description: lead.lead_intelligence?.recommended_action || 'Immediate senior advisor phone outreach required',
+      description: lead?.lead_intelligence?.recommended_action || 'Immediate senior advisor phone outreach required',
     };
   }
 
-  if (qual === 'WARM' || workflowStatus === 'WARM' || lead.lead_intelligence?.intent_score >= 70) {
+  if (qual === 'WARM' || workflowStatus === 'WARM' || intentScore >= 70) {
     return {
       action: 'SENIOR ADVISOR FOLLOW-UP',
       slaLabel: '2-Hour SLA',
       slaMinutes: 120,
       assignedRole: 'INBOUND_SALES_SPECIALIST',
       urgency: 'HIGH',
-      description: lead.lead_intelligence?.recommended_action || 'Inbound sales specialist consultation follow-up',
+      description: lead?.lead_intelligence?.recommended_action || 'Inbound sales specialist consultation follow-up',
     };
   }
 
@@ -192,7 +193,7 @@ export function getRecommendedActionAndSLA(
     slaMinutes: 1440,
     assignedRole: 'AUTOMATED_NURTURE_WORKFLOW',
     urgency: 'LOW',
-    description: lead.lead_intelligence?.recommended_action || 'Enroll in automated marketing nurture workflow',
+    description: lead?.lead_intelligence?.recommended_action || 'Enroll in automated marketing nurture workflow',
   };
 }
 

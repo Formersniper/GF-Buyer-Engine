@@ -3,7 +3,7 @@
  */
 
 import { BuyerProfile, BuyerPreference } from '../../../schemas/database';
-import { getSupabaseClient } from '../client';
+import { getSupabaseClient, getSupabaseAdminClient } from '../client';
 import { logger } from '../../security/logger';
 import { 
   TenantScope,
@@ -52,7 +52,7 @@ export function createBuyerProfilesRepository(
         throw new TenantMismatchError(`Cannot upsert buyer profile for lead ${input.lead_id}: lead not found in authorized tenant context.`);
       }
 
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       const now = new Date().toISOString();
       const id = input.id || generateUUID();
       const tenantId = scope.tenantId || lead.tenant_id;
@@ -116,7 +116,7 @@ export function createBuyerProfilesRepository(
 
     getBuyerProfile: async (scopeOrLeadId, maybeLeadId) => {
       const { scope, id: leadId } = parseScopeAndId(scopeOrLeadId, maybeLeadId);
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         try {
           let query = client.from('buyer_profiles').select('*').eq('lead_id', leadId);
@@ -168,7 +168,7 @@ export function createBuyerPreferencesRepository(
         throw new TenantMismatchError(`Cannot add buyer preference for lead ${input.lead_id}: lead not found in authorized tenant context.`);
       }
 
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       const now = new Date().toISOString();
       const id = input.id || generateUUID();
       const tenantId = scope.tenantId || lead.tenant_id;
@@ -216,7 +216,7 @@ export function createBuyerPreferencesRepository(
 
     getBuyerPreferences: async (scopeOrLeadId, maybeLeadId) => {
       const { scope, id: leadId } = parseScopeAndId(scopeOrLeadId, maybeLeadId);
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         try {
           let query = client.from('buyer_preferences').select('*').eq('lead_id', leadId);

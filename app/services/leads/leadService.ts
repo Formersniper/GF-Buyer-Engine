@@ -13,6 +13,7 @@ import { supabaseDataService } from '../supabase/repositories';
 import { resolveLead } from './leadResolver';
 import { scoutAdapter, ScoutEnrichmentQuery } from '../scout/scoutAdapter';
 import { callService, CallEligibilityExecutionResult, EvaluateCallEligibilityOptions } from '../calls/callService';
+import { TenantScope, TenantContext } from '../supabase/repos/helpers';
 
 export interface LeadProcessingOptions {
   autoEnrich?: boolean;
@@ -24,7 +25,7 @@ export interface LeadService {
   /**
    * Resolves, deduplicates, and ingests a raw real-estate lead into the engine
    */
-  ingestRawLead(rawLead: RawLeadInput, options?: LeadProcessingOptions): Promise<GFBuyerLead>;
+  ingestRawLead(scope: TenantScope | TenantContext, rawLead: RawLeadInput, options?: LeadProcessingOptions): Promise<GFBuyerLead>;
 
   /**
    * Retrieves a buyer lead by ID with full epistemic provenance
@@ -78,14 +79,40 @@ export class DefaultLeadService implements LeadService {
   /**
    * Ingests and resolves a new raw lead
    */
-  async ingestRawLead(rawLead: RawLeadInput, options?: LeadProcessingOptions): Promise<GFBuyerLead> {
-    const existingLeads = await supabaseDataService.leads.listLeads({ limit: 500 });
+  async ingestRawLead(scope: TenantScope | TenantContext, rawLead: RawLeadInput, options?: LeadProcessingOptions): Promise<GFBuyerLead> {
+    const { phone, email } = rawLead;
+    let existingLeads: any[] = [];
+    
+    // Efficient targeted lookup instead of full table scan
+    const matchedLead = await supabaseDataService.leads.getLeadByPhoneOrEmail(
+      scope, 
+      phone || '', 
+      email || ''
+    );
+    if (matchedLead) {
+      existingLeads.push(matchedLead);
+    }
+
     const resolution = resolveLead(rawLead, existingLeads);
 
-    let dbLead = await supabaseDataService.leads.getLeadByLeadId(resolution.leadId);
+    let finalLeadId = resolution.leadId;
+    let dbLead = await supabaseDataService.leads.getLeadByLeadId(scope, finalLeadId);
+
+    // If resolution outcome is NEW, but lead_id already exists in the database, resolve to a unique ID
+    if (resolution.outcome === 'NEW' && dbLead) {
+      let attempts = 0;
+      const year = new Date().getFullYear();
+      while (dbLead && attempts < 50) {
+        const uniqueSeq = Math.floor(100000 + Math.random() * 900000);
+        finalLeadId = `GF-${year}-${uniqueSeq}`;
+        dbLead = await supabaseDataService.leads.getLeadByLeadId(scope, finalLeadId);
+        attempts++;
+      }
+    }
+
     if (!dbLead) {
-      dbLead = await supabaseDataService.leads.createLead({
-        lead_id: resolution.leadId,
+      dbLead = await supabaseDataService.leads.createLead(scope, {
+        lead_id: finalLeadId,
         name: rawLead.full_name || null,
         phone: rawLead.phone || null,
         email: rawLead.email || null,
@@ -99,7 +126,7 @@ export class DefaultLeadService implements LeadService {
         lead_id: dbLead.id,
         event_type: 'LEAD_INGESTED',
         event_data: {
-          lead_id: resolution.leadId,
+          lead_id: finalLeadId,
           source: rawLead.source,
           resolution_action: resolution.outcome,
         },
@@ -110,10 +137,11 @@ export class DefaultLeadService implements LeadService {
       return await this.triggerEnrichment(dbLead.lead_id);
     }
 
-    const canonical = await supabaseDataService.mapToGFBuyerLead(dbLead.id);
+    const canonical = await supabaseDataService.mapToGFBuyerLead(scope, dbLead.id);
     if (!canonical) {
       throw new Error(`Failed to map canonical lead for ID: ${dbLead.id}`);
     }
+
     return canonical;
   }
 

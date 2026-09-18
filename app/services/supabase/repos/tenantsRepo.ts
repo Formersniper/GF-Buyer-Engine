@@ -39,7 +39,7 @@ export interface WebhookEventsRepository {
 export function createTenantsRepository(tenantsStore: Map<string, Tenant>): TenantsRepository {
   return {
     createTenant: async (input) => {
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       const now = new Date().toISOString();
       const id = input.id || generateUUID();
       const record: Tenant = {
@@ -68,7 +68,7 @@ export function createTenantsRepository(tenantsStore: Map<string, Tenant>): Tena
     },
 
     getTenant: async (id: string) => {
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         const { data, error } = await client.from('tenants').select('*').eq('id', id).maybeSingle();
         if (error) {
@@ -85,7 +85,7 @@ export function createTenantsRepository(tenantsStore: Map<string, Tenant>): Tena
     },
 
     getTenantBySlug: async (slug: string) => {
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         const { data, error } = await client.from('tenants').select('*').eq('slug', slug).maybeSingle();
         if (error) {
@@ -105,7 +105,7 @@ export function createTenantsRepository(tenantsStore: Map<string, Tenant>): Tena
     },
 
     listTenants: async () => {
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         const { data, error } = await client.from('tenants').select('*').order('created_at', { ascending: false });
         if (error) {
@@ -125,7 +125,7 @@ export function createTenantsRepository(tenantsStore: Map<string, Tenant>): Tena
     },
 
     updateTenant: async (id: string, updates) => {
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       const now = new Date().toISOString();
 
       if (client) {
@@ -165,7 +165,7 @@ export function createTenantMembershipsRepository(
 ): TenantMembershipsRepository {
   return {
     createMembership: async (input) => {
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       const now = new Date().toISOString();
       const id = input.id || generateUUID();
       const record: TenantMembership = {
@@ -195,7 +195,7 @@ export function createTenantMembershipsRepository(
     },
 
     getMembership: async (tenantId: string, userId: string) => {
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         const { data, error } = await client
           .from('tenant_memberships')
@@ -217,7 +217,7 @@ export function createTenantMembershipsRepository(
     },
 
     getUserMemberships: async (userId: string) => {
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         const { data, error } = await client.from('tenant_memberships').select('*').eq('user_id', userId);
         if (error) {
@@ -230,7 +230,7 @@ export function createTenantMembershipsRepository(
     },
 
     getTenantMemberships: async (tenantId: string) => {
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         const { data, error } = await client.from('tenant_memberships').select('*').eq('tenant_id', tenantId);
         if (error) {
@@ -243,7 +243,7 @@ export function createTenantMembershipsRepository(
     },
 
     deleteMembership: async (tenantId: string, userId: string) => {
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         const { error } = await client
           .from('tenant_memberships')
@@ -265,7 +265,7 @@ export function createTenantApiKeysRepository(
 ): TenantApiKeysRepository {
   return {
     createApiKey: async (input) => {
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       const now = new Date().toISOString();
       const id = input.id || generateUUID();
       const record: TenantApiKey = {
@@ -295,7 +295,7 @@ export function createTenantApiKeysRepository(
     },
 
     getApiKeyByHash: async (keyHash: string) => {
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         const { data, error } = await client.from('tenant_api_keys').select('*').eq('key_hash', keyHash).maybeSingle();
         if (error) {
@@ -312,7 +312,7 @@ export function createTenantApiKeysRepository(
     },
 
     listApiKeys: async (tenantId: string) => {
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         const { data, error } = await client.from('tenant_api_keys').select('*').eq('tenant_id', tenantId);
         if (error) {
@@ -326,7 +326,7 @@ export function createTenantApiKeysRepository(
 
     revokeApiKey: async (id: string) => {
       const now = new Date().toISOString();
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         const { error } = await client.from('tenant_api_keys').update({ revoked_at: now }).eq('id', id);
         if (error) {
@@ -350,7 +350,7 @@ export function createWebhookEventsRepository(
 ): WebhookEventsRepository {
   return {
     recordEvent: async (event: WebhookEvent) => {
-      const client = getSupabaseAdminClient() || getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         const { data, error } = await client.from('webhook_events').insert(event).select().single();
         if (error) {
@@ -378,7 +378,7 @@ export function createWebhookEventsRepository(
     },
 
     getEvent: async (eventId: string) => {
-      const client = getSupabaseAdminClient() || getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         try {
           const { data, error } = await client.from('webhook_events').select('*').eq('event_id', eventId).maybeSingle();
@@ -405,7 +405,7 @@ export function createWebhookEventsRepository(
         processed_at: processedAt || new Date().toISOString(),
       };
 
-      const client = getSupabaseAdminClient() || getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         try {
           const { data, error } = await client.from('webhook_events').update(updated).eq('event_id', eventId).select().single();

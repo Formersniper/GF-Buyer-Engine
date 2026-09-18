@@ -77,6 +77,24 @@ export function createApp(): Express {
 
   // --- PROTECTED API ROUTES (Require Authentication) ---
 
+  // Inbound Lead Webhook (Intake)
+  // Authenticated via API Key (enforced by requireAuth())
+  app.post('/api/leads/webhook', requireAuth(), async (req, res) => {
+    try {
+      const { processInboundLeadWebhook } = await import('./app/services/leads/inboundLeadWebhook.js');
+      const result = await processInboundLeadWebhook(req);
+      res.status(200).json(result);
+    } catch (err: any) {
+      if (err.message && err.message.includes('Tenant context missing')) {
+        res.status(401).json({ error: err.message });
+      } else if (err.message && err.message.includes('must contain at least')) {
+        res.status(400).json({ error: err.message });
+      } else {
+        res.status(500).json({ error: err.message || 'Internal processing error' });
+      }
+    }
+  });
+
   // Start Outbound Voice Qualification Call
   app.post('/api/voice/start-call', requireAuth(), requireRole('SALES', 'ADMIN', 'OWNER'), rateLimit('sarvam_api', 50, 3600), async (req, res) => {
     try {

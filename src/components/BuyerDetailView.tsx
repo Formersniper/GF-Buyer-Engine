@@ -412,20 +412,20 @@ export const BuyerDetailView: React.FC<BuyerDetailViewProps> = ({
             <div>
               <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Buyer Intent Score</div>
               <div className="text-3xl font-black text-slate-900 font-mono mt-0.5">
-                {lead.lead_intelligence.intent_score}
+                {lead.lead_intelligence?.intent_score ?? 0}
                 <span className="text-sm font-normal text-slate-400">/100</span>
               </div>
             </div>
             <div>
               <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Qualification</div>
               <div className="text-sm font-bold text-slate-900 mt-1 font-mono">
-                {lead.lead_intelligence.qualification || 'UNQUALIFIED'}
+                {lead.lead_intelligence?.qualification || 'UNQUALIFIED'}
               </div>
             </div>
             <div>
               <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Confidence</div>
               <div className="text-sm font-bold text-emerald-700 mt-1 font-mono">
-                {Math.round(lead.lead_intelligence.confidence * 100)}%
+                {Math.round((lead.lead_intelligence?.confidence ?? 0) * 100)}%
               </div>
             </div>
           </div>
@@ -617,18 +617,18 @@ export const BuyerDetailView: React.FC<BuyerDetailViewProps> = ({
             <div>
               <div className="text-slate-500 text-[11px]">Recommended Client Action:</div>
               <div className="mt-1 p-3 rounded bg-slate-50 border border-slate-200 font-medium text-slate-900 leading-relaxed">
-                {lead.lead_intelligence.recommended_action || 'Awaiting qualification results.'}
+                {lead.lead_intelligence?.recommended_action || 'Awaiting qualification results.'}
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-2 pt-1">
               <div className="p-2.5 rounded bg-slate-50 border border-slate-200">
                 <span className="text-slate-500 block text-[10px] uppercase font-bold tracking-wider">Lead Source</span>
-                <span className="font-semibold text-slate-900 text-xs font-mono">{lead.lead_intelligence.source}</span>
+                <span className="font-semibold text-slate-900 text-xs font-mono">{lead.lead_intelligence?.source || 'Direct Intake'}</span>
               </div>
               <div className="p-2.5 rounded bg-slate-50 border border-slate-200">
                 <span className="text-slate-500 block text-[10px] uppercase font-bold tracking-wider">Consent Verification</span>
-                <span className="font-semibold text-slate-900 text-xs font-mono">{lead.provenance.consent_status}</span>
+                <span className="font-semibold text-slate-900 text-xs font-mono">{lead.provenance?.consent_status || 'CONSENT_GRANTED'}</span>
               </div>
             </div>
           </div>

@@ -3,10 +3,11 @@
  */
 
 import { Lead, LeadEnrichment, LeadEvent } from '../../../schemas/database';
-import { getSupabaseClient } from '../client';
+import { getSupabaseClient, getSupabaseAdminClient } from '../client';
 import { 
   TenantScope,
   TenantContext,
+  ResolvedTenantScope,
   resolveEffectiveTenantScope,
   parseScopeAndId,
   parseScopeAndFilter,
@@ -25,6 +26,11 @@ export interface LeadsRepository {
   ): Promise<Lead>;
   getLead(scopeOrId: TenantScope | TenantContext | string, maybeId?: string): Promise<Lead | null>;
   getLeadByLeadId(scopeOrLeadId: TenantScope | TenantContext | string, maybeLeadId?: string): Promise<Lead | null>;
+  getLeadByPhoneOrEmail(
+    scopeOrPhone: TenantScope | TenantContext | string,
+    phoneOrEmail: string,
+    maybeEmail?: string
+  ): Promise<Lead | null>;
   updateLead(
     scopeOrId: TenantScope | TenantContext | string,
     idOrUpdates: string | Partial<Omit<Lead, 'id' | 'lead_id' | 'created_at'>>,
@@ -67,7 +73,7 @@ export function createLeadsRepository(leadsStore: Map<string, Lead>): LeadsRepos
       }
 
       const tenantId = scope.tenantId || input.tenant_id;
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       const now = new Date().toISOString();
       const id = input.id || generateUUID();
       const record: Lead = {
@@ -172,7 +178,7 @@ export function createLeadsRepository(leadsStore: Map<string, Lead>): LeadsRepos
 
     getLead: async (scopeOrId, maybeId) => {
       const { scope, id } = parseScopeAndId(scopeOrId, maybeId);
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         try {
           let query = client.from('leads').select('*').eq('id', id);
@@ -209,7 +215,7 @@ export function createLeadsRepository(leadsStore: Map<string, Lead>): LeadsRepos
 
     getLeadByLeadId: async (scopeOrLeadId, maybeLeadId) => {
       const { scope, id: leadId } = parseScopeAndId(scopeOrLeadId, maybeLeadId);
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         try {
           let query = client.from('leads').select('*').eq('lead_id', leadId);
@@ -247,6 +253,70 @@ export function createLeadsRepository(leadsStore: Map<string, Lead>): LeadsRepos
       return null;
     },
 
+    getLeadByPhoneOrEmail: async (scopeOrPhone, phoneOrEmail, maybeEmail) => {
+      let scope: ResolvedTenantScope;
+      let rawPhone: string;
+      let rawEmail: string | undefined;
+
+      if (maybeEmail !== undefined) {
+        scope = resolveEffectiveTenantScope(scopeOrPhone as any);
+        rawPhone = phoneOrEmail;
+        rawEmail = maybeEmail;
+      } else {
+        scope = resolveEffectiveTenantScope(undefined);
+        rawPhone = scopeOrPhone as string;
+        rawEmail = phoneOrEmail;
+      }
+
+      const phone = rawPhone ? rawPhone.replace(/\s+/g, '') : '';
+      const email = rawEmail ? rawEmail.trim().toLowerCase() : '';
+
+      if (!phone && !email) return null;
+
+      const client = getSupabaseAdminClient() || getSupabaseClient();
+      if (client) {
+        try {
+          let query = client.from('leads').select('*');
+          if (!scope.isPlatformAdmin && scope.tenantId) {
+            query = query.eq('tenant_id', scope.tenantId);
+          }
+          
+          if (phone && email) {
+            query = query.or(`phone.eq.${phone},email.eq.${email}`);
+          } else if (phone) {
+            query = query.eq('phone', phone);
+          } else if (email) {
+            query = query.eq('email', email);
+          }
+          
+          const { data, error } = await query.limit(1).maybeSingle();
+          if (error) {
+             logger.error('[Supabase Query Error] Failed to get lead by phone/email:', { service: "supabase-repo", error_category: "DATABASE_ERROR", data: { error: (error)?.message || String(error) } });
+             throw new Error(`Supabase query failed on public.leads: ${error.message}`);
+          }
+          if (data) {
+            leadsStore.set(data.id, data);
+            return data;
+          }
+          return null;
+        } catch (e: any) {
+          // fallback to memory
+        }
+      }
+      
+      for (const lead of leadsStore.values()) {
+        if (!scope.isPlatformAdmin && scope.tenantId && lead.tenant_id && lead.tenant_id !== scope.tenantId) {
+          continue;
+        }
+        const leadPhone = lead.phone ? lead.phone.replace(/\s+/g, '') : '';
+        const leadEmail = lead.email ? lead.email.trim().toLowerCase() : '';
+        if ((phone && leadPhone === phone) || (email && leadEmail === email)) {
+          return lead;
+        }
+      }
+      return null;
+    },
+
     updateLead: async (scopeOrId, idOrUpdates, maybeUpdates) => {
       let scope: any;
       let id: string;
@@ -262,7 +332,7 @@ export function createLeadsRepository(leadsStore: Map<string, Lead>): LeadsRepos
         updates = idOrUpdates as Partial<Omit<Lead, 'id' | 'lead_id' | 'created_at'>>;
       }
 
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       const now = new Date().toISOString();
 
       if (client) {
@@ -311,7 +381,7 @@ export function createLeadsRepository(leadsStore: Map<string, Lead>): LeadsRepos
 
     listLeads: async (scopeOrFilter, maybeFilter) => {
       const { scope, filter } = parseScopeAndFilter(scopeOrFilter, maybeFilter);
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         try {
           let query = client.from('leads').select('*').order('created_at', { ascending: false });
@@ -353,7 +423,7 @@ export function createLeadsRepository(leadsStore: Map<string, Lead>): LeadsRepos
 
     deleteLead: async (scopeOrId, maybeId) => {
       const { scope, id } = parseScopeAndId(scopeOrId, maybeId);
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         try {
           let query = client.from('leads').delete().eq('id', id);
@@ -399,7 +469,7 @@ export function createLeadEnrichmentRepository(
         throw new TenantMismatchError(`Cannot create enrichment for lead ${input.lead_id}: lead not found in authorized tenant context.`);
       }
 
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       const now = new Date().toISOString();
       const id = input.id || generateUUID();
       const tenantId = scope.tenantId || lead.tenant_id;
@@ -447,7 +517,7 @@ export function createLeadEnrichmentRepository(
 
     getEnrichment: async (scopeOrLeadId, maybeLeadId) => {
       const { scope, id: leadId } = parseScopeAndId(scopeOrLeadId, maybeLeadId);
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         try {
           let query = client.from('lead_enrichment').select('*').eq('lead_id', leadId);
@@ -484,19 +554,32 @@ export function createLeadEventsRepository(
 ): LeadEventsRepository {
   return {
     appendLeadEvent: async (scopeOrEvent, maybeEvent) => {
-      const scope = resolveEffectiveTenantScope(maybeEvent !== undefined ? (scopeOrEvent as TenantScope) : undefined);
-      const input = maybeEvent !== undefined ? maybeEvent : (scopeOrEvent as any);
+      let scope: ResolvedTenantScope;
+      let input: any;
 
-      // Verify parent lead is in scope
-      const lead = await leadsRepo.getLead(scope, input.lead_id);
+      if (maybeEvent !== undefined) {
+        scope = resolveEffectiveTenantScope(scopeOrEvent as TenantScope);
+        input = maybeEvent;
+      } else {
+        input = scopeOrEvent as any;
+        scope = resolveEffectiveTenantScope(input?.tenant_id ? (input.tenant_id as any) : undefined);
+      }
+
+      // Verify parent lead is in scope. If single argument was passed, also check admin scope
+      let lead = await leadsRepo.getLead(scope, input.lead_id);
+      if (!lead && maybeEvent === undefined) {
+        const adminScope = resolveEffectiveTenantScope({ isPlatformAdmin: true });
+        lead = await leadsRepo.getLead(adminScope, input.lead_id);
+      }
+
       if (!lead) {
         throw new TenantMismatchError(`Cannot create lead event for lead ${input.lead_id}: lead not found in authorized tenant context.`);
       }
 
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       const now = new Date().toISOString();
       const id = input.id || generateUUID();
-      const tenantId = scope.tenantId || lead.tenant_id;
+      const tenantId = (maybeEvent !== undefined && scope.tenantId) ? scope.tenantId : lead.tenant_id;
       const record: LeadEvent = {
         id,
         tenant_id: tenantId,
@@ -532,7 +615,7 @@ export function createLeadEventsRepository(
 
     getLeadEvents: async (scopeOrLeadId, maybeLeadId) => {
       const { scope, id: leadId } = parseScopeAndId(scopeOrLeadId, maybeLeadId);
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         try {
           let query = client

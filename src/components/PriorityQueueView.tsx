@@ -19,6 +19,7 @@ import { leadRepository } from '../services/supabase/repositories/leadRepository
 import { supabaseDataService } from '../../app/services/supabase/repositories';
 import {
   filterAndSortPriorityQueue,
+  getRecommendedActionAndSLA,
   DashboardFilters
 } from '../services/brokerDashboardService';
 import { DEFAULT_TENANT_ID } from '../../app/schemas/tenant';
@@ -83,7 +84,12 @@ export const PriorityQueueView: React.FC<PriorityQueueViewProps> = ({ onSelectLe
   }, []);
 
   const priorityQueue = useMemo(() => {
-    return filterAndSortPriorityQueue(leads, handoffsMap, filters);
+    const sortedLeads = filterAndSortPriorityQueue(leads, handoffsMap, filters);
+    return sortedLeads.map((lead) => ({
+      lead,
+      handoff: handoffsMap.get(lead.lead_id),
+      sla: getRecommendedActionAndSLA(lead, handoffsMap.get(lead.lead_id)),
+    }));
   }, [leads, handoffsMap, filters]);
 
   const activeFilterCount = useMemo(() => {
@@ -220,17 +226,17 @@ export const PriorityQueueView: React.FC<PriorityQueueViewProps> = ({ onSelectLe
             </div>
           ) : (
             priorityQueue.map((item, index) => {
-              const qual = item.lead.lead_intelligence.qualification.toUpperCase();
-              const wStatus = item.lead.workflow.status.toUpperCase();
+              const qual = (item.lead?.lead_intelligence?.qualification || '').toUpperCase();
+              const wStatus = (item.lead?.workflow?.status || '').toUpperCase();
               const scoreBand = qual === 'HOT' || wStatus === 'HOT' ? 'HOT' : qual === 'WARM' || wStatus === 'WARM' ? 'WARM' : 'NURTURE';
-              const intentScore = item.lead.lead_intelligence.intent_score;
-              const matches = item.lead.project_intelligence?.top_matches || [];
+              const intentScore = item.lead?.lead_intelligence?.intent_score ?? 0;
+              const matches = item.lead?.project_intelligence?.top_matches || [];
               const handoffStatus = item.handoff?.handoff_status || (wStatus === 'HANDED_OFF' ? 'COMPLETED' : 'NOT_STARTED');
 
               return (
                 <div
-                  key={item.lead.lead_id}
-                  onClick={() => onSelectLead(item.lead.lead_id)}
+                  key={item.lead?.lead_id || index}
+                  onClick={() => item.lead && onSelectLead(item.lead.lead_id)}
                   className="p-4 hover:bg-slate-50 transition-colors cursor-pointer group flex flex-col sm:flex-row gap-4"
                 >
                   <div className="shrink-0 flex flex-col items-center justify-center w-12 sm:w-16">
@@ -244,7 +250,7 @@ export const PriorityQueueView: React.FC<PriorityQueueViewProps> = ({ onSelectLe
                     <div className="flex items-center justify-between mb-1">
                       <div className="flex items-center space-x-2">
                         <h4 className="font-bold text-slate-900 truncate">
-                          {item.lead.identity.full_name}
+                          {item.lead?.identity?.full_name || 'Unnamed Lead'}
                         </h4>
                         
                         {scoreBand === 'HOT' && (
@@ -268,31 +274,31 @@ export const PriorityQueueView: React.FC<PriorityQueueViewProps> = ({ onSelectLe
                       </div>
                       
                       <div className="hidden sm:flex items-center space-x-2 text-xs">
-                        <span className="text-slate-500 font-mono">{item.lead.identity.phone}</span>
+                        <span className="text-slate-500 font-mono">{item.lead?.identity?.phone || ''}</span>
                       </div>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-y-2 gap-x-4 mt-2">
                       <div className="flex items-center gap-1.5 text-xs text-slate-600">
                         <Building className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                        <span className="truncate" title={item.lead.buying_intent.property_type}>
-                          {item.lead.buying_intent.property_type || 'Unknown Type'}
-                          {item.lead.buying_intent.configuration ? ` • ${item.lead.buying_intent.configuration}` : ''}
+                        <span className="truncate" title={item.lead?.buying_intent?.property_type || ''}>
+                          {item.lead?.buying_intent?.property_type || 'Unknown Type'}
+                          {item.lead?.buying_intent?.configuration ? ` • ${item.lead.buying_intent.configuration}` : ''}
                         </span>
                       </div>
                       
                       <div className="flex items-center gap-1.5 text-xs text-slate-600">
                         <Tag className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                         <span className="font-mono">
-                          {formatCurrency(item.lead.buying_intent.budget.min)} - {formatCurrency(item.lead.buying_intent.budget.max)}
+                          {formatCurrency(item.lead?.buying_intent?.budget?.min ?? null)} - {formatCurrency(item.lead?.buying_intent?.budget?.max ?? null)}
                         </span>
                       </div>
 
                       <div className="flex items-center gap-1.5 text-xs text-slate-600">
                         <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                         <span className="truncate">
-                          {item.lead.buying_intent.preferred_locations.length > 0 
-                            ? item.lead.buying_intent.preferred_locations.join(', ')
+                          {(item.lead?.buying_intent?.preferred_locations?.length ?? 0) > 0 
+                            ? item.lead?.buying_intent?.preferred_locations.join(', ')
                             : 'No locations specified'}
                         </span>
                       </div>
@@ -300,11 +306,11 @@ export const PriorityQueueView: React.FC<PriorityQueueViewProps> = ({ onSelectLe
                       <div className="flex items-center gap-1.5 text-xs">
                         <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                         <span className={`font-semibold truncate ${
-                          item.sla.urgency === 'CRITICAL' ? 'text-rose-600' :
-                          item.sla.urgency === 'HIGH' ? 'text-amber-600' :
+                          item.sla?.urgency === 'CRITICAL' ? 'text-rose-600' :
+                          item.sla?.urgency === 'HIGH' ? 'text-amber-600' :
                           'text-slate-600'
                         }`}>
-                          {item.sla.action}
+                          {item.sla?.action || 'REVIEW'}
                         </span>
                       </div>
                     </div>

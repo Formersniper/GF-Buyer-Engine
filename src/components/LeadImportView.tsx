@@ -18,6 +18,7 @@ import {
 import { ingestCSVLeads, ImportSummary } from '../../app/services/leads/csvIngestion';
 import { supabaseDataService } from '../../app/services/supabase/repositories';
 import { GFBuyerLead } from '../../app/schemas/buyerLead';
+import { DEFAULT_TENANT_ID } from '../../app/schemas/tenant';
 import {
   checkPersistenceHealth,
   PersistenceHealthStatus,
@@ -127,7 +128,7 @@ export const LeadImportView: React.FC<LeadImportViewProps> = ({
     setRuntimeError(null);
     try {
       setCsvContent(text);
-      const summary = await ingestCSVLeads(text);
+      const summary = await ingestCSVLeads(DEFAULT_TENANT_ID, text);
       setImportSummary(summary);
 
       // Fetch canonical GF Buyer Lead dossiers for each created lead
@@ -536,7 +537,7 @@ export const LeadImportView: React.FC<LeadImportViewProps> = ({
                         </td>
                         <td className="py-2.5 px-4 text-slate-600">
                           <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-mono text-[11px]">
-                            {lead.lead_intelligence.source}
+                            {lead.lead_intelligence?.source || 'Direct Ingestion'}
                           </span>
                         </td>
                         <td className="py-2.5 px-4">

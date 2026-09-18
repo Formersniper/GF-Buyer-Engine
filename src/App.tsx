@@ -13,6 +13,8 @@ import { PriorityQueueView } from './components/PriorityQueueView';
 import { GFBuyerLead } from './types/buyerLead';
 import { leadRepository } from './services/supabase/repositories/leadRepository';
 
+import { ClientOnboardingView } from './components/ClientOnboardingView';
+
 export default function App() {
   const [activeView, setActiveView] = useState<string>('overview');
   const [leads, setLeads] = useState<GFBuyerLead[]>([]);
@@ -36,9 +38,9 @@ export default function App() {
 
   const leadCounts = {
     total: leads.length,
-    hot: leads.filter((l) => l.lead_intelligence.qualification === 'HOT' || l.workflow.status === 'HOT').length,
-    warm: leads.filter((l) => l.lead_intelligence.qualification === 'WARM' || l.workflow.status === 'WARM').length,
-    nurture: leads.filter((l) => l.lead_intelligence.qualification === 'NURTURE' || l.workflow.status === 'NURTURE').length,
+    hot: leads.filter((l) => l?.lead_intelligence?.qualification === 'HOT' || l?.workflow?.status === 'HOT').length,
+    warm: leads.filter((l) => l?.lead_intelligence?.qualification === 'WARM' || l?.workflow?.status === 'WARM').length,
+    nurture: leads.filter((l) => l?.lead_intelligence?.qualification === 'NURTURE' || l?.workflow?.status === 'NURTURE').length,
   };
 
   return (
@@ -76,6 +78,9 @@ export default function App() {
 
         {activeView === 'matches' && (
           <ProjectMatchesView leads={leads} onSelectLead={handleSelectLead} />
+        )}
+        {activeView === 'onboarding' && (
+          <ClientOnboardingView onComplete={() => setActiveView('overview')} />
         )}
       </main>
 

@@ -160,7 +160,7 @@ export function createBrokerHandoffRepository(
         updated_at: now,
       };
 
-      const isRealSupabase = !!getSupabaseClient();
+      const isRealSupabase = !!getSupabaseAdminClient() || getSupabaseClient();
       if (isRealSupabase) {
         const client = getSupabaseAdminClient();
         if (!client) {
@@ -226,7 +226,7 @@ export function createBrokerHandoffRepository(
 
     getHandoff: async (scopeOrId, maybeId) => {
       const { scope, id } = parseScopeAndId(scopeOrId, maybeId);
-      const client = getSupabaseAdminClient() || getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         try {
           let query = client.from('broker_handoffs').select('*').eq('id', id);
@@ -259,7 +259,7 @@ export function createBrokerHandoffRepository(
 
     getHandoffsByLeadId: async (scopeOrLeadId, maybeLeadId) => {
       const { scope, id: leadId } = parseScopeAndId(scopeOrLeadId, maybeLeadId);
-      const client = getSupabaseAdminClient() || getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         try {
           let query = client
@@ -314,7 +314,7 @@ export function createBrokerHandoffRepository(
         ruleVersion = scoreIdOrRule;
       }
 
-      const client = getSupabaseAdminClient() || getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseAdminClient() || getSupabaseClient();
       if (client) {
         try {
           let query = client.from('broker_handoffs').select('*').eq('score_id', scoreId);
@@ -401,7 +401,7 @@ export function createBrokerHandoffRepository(
         updated_at: now,
       };
 
-      const isRealSupabase = !!getSupabaseClient();
+      const isRealSupabase = !!getSupabaseAdminClient() || getSupabaseClient();
       if (isRealSupabase) {
         const client = getSupabaseAdminClient();
         if (!client) {
@@ -514,7 +514,7 @@ export function createBrokerHandoffRepository(
         updated_at: now,
       };
 
-      const isRealSupabase = !!getSupabaseClient();
+      const isRealSupabase = !!getSupabaseAdminClient() || getSupabaseClient();
       if (isRealSupabase) {
         const client = getSupabaseAdminClient();
         if (!client) {

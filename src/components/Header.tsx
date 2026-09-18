@@ -1,5 +1,5 @@
 import React from 'react';
-import { Database, ShieldCheck, Activity } from 'lucide-react';
+import { Database, ShieldCheck, Activity, Settings } from 'lucide-react';
 import { isSupabaseConfigured } from '../services/supabase/client';
 
 interface HeaderProps {
@@ -32,6 +32,7 @@ export const Header: React.FC<HeaderProps> = ({
     buyers: 'Filtered_Buyer_Intelligence_List',
     'buyer-detail': 'Canonical_Buyer_Dossier',
     matches: 'Project_Catalog_Fit_Engine',
+    onboarding: 'Workspace_Configuration',
   };
 
   return (
@@ -40,7 +41,7 @@ export const Header: React.FC<HeaderProps> = ({
       <nav className="h-16 bg-slate-900 text-white flex items-center justify-between px-4 sm:px-8 shrink-0 border-b border-slate-800">
         <div className="flex items-center gap-4 sm:gap-6 overflow-x-auto py-1">
           {/* Brand Identity */}
-          <div className="flex items-center gap-2.5 shrink-0 cursor-pointer" onClick={() => onViewChange('import')}>
+          <div className="flex items-center gap-2.5 shrink-0 cursor-pointer" onClick={() => onViewChange('overview')}>
             <div className="w-6 h-6 bg-indigo-500 rounded-xs flex items-center justify-center text-[11px] font-bold text-white shadow-xs">
               GF
             </div>
@@ -73,8 +74,8 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
 
-        {/* Status Badge: Architectural Lock / Supabase Active */}
-        <div className="flex items-center gap-3 shrink-0">
+        {/* Status Badge & Settings */}
+        <div className="flex items-center gap-4 shrink-0">
           <div className="flex items-center gap-2 bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20">
             <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
             <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest hidden sm:inline">
@@ -84,6 +85,13 @@ export const Header: React.FC<HeaderProps> = ({
               Lock Active
             </span>
           </div>
+          <button 
+            onClick={() => onViewChange('onboarding')}
+            className={`p-1.5 rounded transition-colors ${activeView === 'onboarding' ? 'bg-indigo-500/20 text-indigo-400' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+            title="Workspace Configuration"
+          >
+            <Settings className="w-5 h-5" />
+          </button>
         </div>
       </nav>
 

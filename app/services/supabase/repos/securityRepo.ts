@@ -1,5 +1,5 @@
 import { logger } from "../../security/logger";
-import { getSupabaseClient } from '../client'; // Just for context interface if needed
+import { getSupabaseClient, getSupabaseAdminClient } from '../client'; // Just for context interface if needed
 
 export interface IdempotencyRecord {
   id: string;
@@ -33,7 +33,7 @@ export function createSecurityRepository(
 ): SecurityRepository {
   return {
     async acquireIdempotency(tenantId, key, operation, ttlSeconds) {
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (!client) {
         // Fallback for mock environment
         const combinedKey = `${tenantId || 'global'}:${key}`;
@@ -136,7 +136,7 @@ export function createSecurityRepository(
     },
     
     async completeIdempotency(tenantId, key, responseCode, responseBody) {
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (!client) {
         const combinedKey = `${tenantId || 'global'}:${key}`;
         const existing = idempotencyStore.get(combinedKey);
@@ -176,7 +176,7 @@ export function createSecurityRepository(
     },
     
     async failIdempotency(tenantId, key, responseCode, responseBody) {
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (!client) {
         const combinedKey = `${tenantId || 'global'}:${key}`;
         const existing = idempotencyStore.get(combinedKey);
@@ -216,7 +216,7 @@ export function createSecurityRepository(
     },
     
     async acquireResourceLock(resourceType, resourceId, tenantId, lockedBy, ttlSeconds) {
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (!client) {
         const key = `${resourceType}:${resourceId}`;
         const existing = locksStore.get(key);
@@ -297,7 +297,7 @@ export function createSecurityRepository(
     },
     
     async releaseResourceLock(resourceType, resourceId, lockedBy) {
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (!client) {
         const key = `${resourceType}:${resourceId}`;
         const existing = locksStore.get(key);
@@ -321,7 +321,7 @@ export function createSecurityRepository(
       const windowStartMs = Math.floor(Date.now() / (windowSeconds * 1000)) * (windowSeconds * 1000);
       const windowStartIso = new Date(windowStartMs).toISOString();
       
-      const client = getSupabaseClient();
+      const client = getSupabaseAdminClient() || getSupabaseClient();
       if (!client) {
         const key = `${targetId}:${operation}:${windowStartMs}`;
         const current = rateLimitsStore.get(key) || { count: 0 };

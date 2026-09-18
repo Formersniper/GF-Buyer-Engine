@@ -39,14 +39,14 @@ class LeadRepository implements ILeadRepository {
         return {
           id: lead.lead_id,
           lead_id: lead.lead_id,
-          name: lead.identity.full_name,
-          phone: lead.identity.phone,
-          email: lead.identity.email,
-          source: lead.lead_intelligence.source,
+          name: lead.identity?.full_name || '',
+          phone: lead.identity?.phone || '',
+          email: lead.identity?.email || '',
+          source: lead.lead_intelligence?.source || 'manual',
           source_reference: null,
-          status: lead.workflow.status,
-          created_at: lead.provenance.consent_timestamp || new Date().toISOString(),
-          updated_at: lead.workflow.updated_at || new Date().toISOString(),
+          status: lead.workflow?.status || 'INGESTED',
+          created_at: lead.provenance?.consent_timestamp || new Date().toISOString(),
+          updated_at: lead.workflow?.updated_at || new Date().toISOString(),
         };
       }
     }
@@ -70,14 +70,14 @@ class LeadRepository implements ILeadRepository {
     return Array.from(this.inMemoryCanonicalLeads.values()).map((lead) => ({
       id: lead.lead_id,
       lead_id: lead.lead_id,
-      name: lead.identity.full_name,
-      phone: lead.identity.phone,
-      email: lead.identity.email,
-      source: lead.lead_intelligence.source,
+      name: lead.identity?.full_name || '',
+      phone: lead.identity?.phone || '',
+      email: lead.identity?.email || '',
+      source: lead.lead_intelligence?.source || 'manual',
       source_reference: null,
-      status: lead.workflow.status,
-      created_at: lead.provenance.consent_timestamp || new Date().toISOString(),
-      updated_at: lead.workflow.updated_at || new Date().toISOString(),
+      status: lead.workflow?.status || 'INGESTED',
+      created_at: lead.provenance?.consent_timestamp || new Date().toISOString(),
+      updated_at: lead.workflow?.updated_at || new Date().toISOString(),
     }));
   }
 
@@ -146,12 +146,12 @@ class LeadRepository implements ILeadRepository {
     if (supabase) {
       await supabase.from('leads').upsert({
         lead_id: lead.lead_id,
-        name: lead.identity.full_name,
-        phone: lead.identity.phone,
-        email: lead.identity.email,
-        source: lead.lead_intelligence.source,
-        status: lead.workflow.status,
-        updated_at: lead.workflow.updated_at || new Date().toISOString(),
+        name: lead.identity?.full_name || '',
+        phone: lead.identity?.phone || '',
+        email: lead.identity?.email || '',
+        source: lead.lead_intelligence?.source || 'manual',
+        status: lead.workflow?.status || 'INGESTED',
+        updated_at: lead.workflow?.updated_at || new Date().toISOString(),
       });
     }
   }

@@ -39,10 +39,10 @@ export const ProcessingView: React.FC<ProcessingViewProps> = ({
   const qualified = leads.filter((l) => 
     ['QUALIFIED', 'SCORED', 'HOT', 'WARM', 'NURTURE', 'PROJECT_MATCHED', 'HANDOFF'].includes(l.workflow.status)
   ).length;
-  const hot = leads.filter((l) => l.lead_intelligence.qualification === 'HOT' || l.workflow.status === 'HOT').length;
-  const warm = leads.filter((l) => l.lead_intelligence.qualification === 'WARM' || l.workflow.status === 'WARM').length;
-  const nurture = leads.filter((l) => l.lead_intelligence.qualification === 'NURTURE' || l.workflow.status === 'NURTURE').length;
-  const projectMatches = leads.filter((l) => l.project_intelligence.top_matches.length > 0).length;
+  const hot = leads.filter((l) => l?.lead_intelligence?.qualification === 'HOT' || l?.workflow?.status === 'HOT').length;
+  const warm = leads.filter((l) => l?.lead_intelligence?.qualification === 'WARM' || l?.workflow?.status === 'WARM').length;
+  const nurture = leads.filter((l) => l?.lead_intelligence?.qualification === 'NURTURE' || l?.workflow?.status === 'NURTURE').length;
+  const projectMatches = leads.filter((l) => (l?.project_intelligence?.top_matches?.length ?? 0) > 0).length;
 
   const metricCards = [
     { label: 'Total Leads', value: totalLeads, icon: Users, color: 'text-slate-900', bg: 'bg-slate-50' },
@@ -191,8 +191,8 @@ export const ProcessingView: React.FC<ProcessingViewProps> = ({
                     {lead.workflow.last_event || '—'}
                   </td>
                   <td className="py-3 px-4 font-bold text-slate-900 font-mono">
-                    {lead.lead_intelligence.intent_score > 0
-                      ? `${lead.lead_intelligence.intent_score}/100`
+                    {(lead.lead_intelligence?.intent_score ?? 0) > 0
+                      ? `${lead.lead_intelligence?.intent_score}/100`
                       : '—'}
                   </td>
                   <td className="py-3 px-4 text-right">

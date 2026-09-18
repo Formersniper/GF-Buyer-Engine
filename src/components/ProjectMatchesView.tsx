@@ -16,12 +16,12 @@ export const ProjectMatchesView: React.FC<ProjectMatchesViewProps> = ({
 
   // Collect all active project matches across leads
   const allMatches = leads.flatMap((lead) =>
-    lead.project_intelligence.top_matches.map((m) => ({
+    (lead?.project_intelligence?.top_matches || []).map((m) => ({
       ...m,
-      buyerName: lead.identity.full_name,
-      buyerLeadId: lead.lead_id,
-      buyerBudget: lead.buying_intent.budget,
-      buyerQualification: lead.lead_intelligence.qualification,
+      buyerName: lead?.identity?.full_name || 'Anonymous Buyer',
+      buyerLeadId: lead?.lead_id || '',
+      buyerBudget: lead?.buying_intent?.budget,
+      buyerQualification: lead?.lead_intelligence?.qualification || 'UNQUALIFIED',
     }))
   );
 
