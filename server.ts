@@ -238,6 +238,79 @@ export function createApp(): Express {
     }
   });
 
+  // Secure Voice Execution Start Endpoint (Phase 9.4)
+  app.post('/api/voice/start', requireAuth(), requireRole('SALES', 'ADMIN', 'OWNER'), async (req, res) => {
+    try {
+      const { leadId, idempotencyKey, customVariables, systemPrompt } = req.body;
+      if (!leadId) {
+        return res.status(400).json({ error: 'leadId is required' });
+      }
+      const tenantId = req.auth?.tenantId;
+      if (!tenantId) {
+        return res.status(401).json({ error: 'Tenant context missing in authentication' });
+      }
+
+      // 1. Resolve lead with strict tenant scope
+      let dbLead = await supabaseDataService.leads.getLeadByLeadId(tenantId, leadId);
+      if (!dbLead && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(leadId)) {
+        dbLead = await supabaseDataService.leads.getLead(tenantId, leadId);
+      }
+      if (!dbLead) {
+        return res.status(404).json({ error: 'Lead not found within tenant scope' });
+      }
+
+      if (dbLead.tenant_id !== tenantId && !req.auth?.isPlatformAdmin) {
+        return res.status(403).json({ error: 'Cross-tenant access forbidden' });
+      }
+
+      // 2. Fresh Compliance & Eligibility Re-check (if not already CALL_PENDING, CALLING, or CONNECTED)
+      if (dbLead.status !== 'CALL_PENDING' && dbLead.status !== 'CALLING' && dbLead.status !== 'CONNECTED') {
+        const callsHistory = await supabaseDataService.calls.getCallsByLead(dbLead.id);
+        const profile = await supabaseDataService.buyerProfiles.getBuyerProfile(tenantId, dbLead.id);
+        const consentStatus = (profile?.metadata as any)?.consent_status || (profile as any)?.consent_status || (dbLead as any).consent_status;
+        const canonicalLead = await supabaseDataService.mapToGFBuyerLead(dbLead.id);
+
+        if (!canonicalLead) {
+          return res.status(422).json({ error: 'Failed to map canonical lead for execution' });
+        }
+
+        const eligibilityResult = evaluateCallEligibility({
+          leadId: dbLead.id,
+          tenantId,
+          status: dbLead.status,
+          phone: canonicalLead.identity.phone,
+          email: canonicalLead.identity.email,
+          consentStatus,
+          source: dbLead.source,
+          enrichmentAvailable: true,
+          callsHistory,
+        });
+
+        if (!eligibilityResult.eligible || eligibilityResult.decision !== 'ELIGIBLE') {
+          return res.status(422).json({
+            error: 'Lead failed pre-dispatch compliance or eligibility re-check',
+            eligibility: eligibilityResult,
+          });
+        }
+      }
+
+      // 3. Execute StartCall via CallService (Authoritative Voice Execution Boundary)
+      const effectiveIdempotencyKey = idempotencyKey || `start-call-${dbLead.id}-${Date.now()}`;
+      const result = await callService.startCall(dbLead.id, {
+        idempotencyKey: effectiveIdempotencyKey,
+        customVariables,
+        systemPrompt,
+        actor: 'human_operator',
+      });
+
+      return res.json(result);
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : 'Call execution failed';
+      const statusCode = errMsg.includes('already in progress') || errMsg.includes('locked') || errMsg.includes('conflict') ? 409 : 500;
+      res.status(statusCode).json({ error: errMsg });
+    }
+  });
+
   // Get Calls for Lead (Phase 9.3.3)
   app.get('/api/voice/calls/lead/:leadId', requireAuth(), async (req, res) => {
     try {

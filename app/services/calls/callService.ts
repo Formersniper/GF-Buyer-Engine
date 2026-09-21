@@ -240,6 +240,27 @@ export class CallService {
     const previousStatus = dbLead.status;
     const actor = options?.actor || 'human_operator';
 
+    // If already in CALLING or CONNECTED, return existing active call telemetry idempotently
+    if (previousStatus === 'CALLING' || previousStatus === 'CONNECTED') {
+      const existingCalls = await supabaseDataService.calls.getCallsByLead(dbLead.id);
+      const latestCall = existingCalls[existingCalls.length - 1];
+      const updatedCanonical = await supabaseDataService.mapToGFBuyerLead(dbLead.id);
+      return {
+        leadId: dbLead.id,
+        callResult: {
+          callId: latestCall?.id || 'idempotent-active',
+          provider: latestCall?.provider || 'sarvam',
+          status: (latestCall?.status || previousStatus) as any,
+          initiated: true,
+          external_call_id: latestCall?.provider_call_id || undefined,
+          created_at: latestCall?.created_at || new Date().toISOString(),
+        },
+        previousStatus,
+        newStatus: previousStatus,
+        canonicalLead: updatedCanonical || (await supabaseDataService.mapToGFBuyerLead(dbLead.id))!,
+      };
+    }
+
     // Must be in CALL_PENDING (or evaluate if in ENRICHED)
     if (previousStatus !== 'CALL_PENDING') {
       if (previousStatus === 'ENRICHED') {
@@ -321,13 +342,19 @@ export class CallService {
       throw new Error(`Failed to reload canonical lead after call initiation`);
     }
 
-    return {
+    const result: StartCallExecutionResult = {
       leadId: dbLead.id,
       callResult,
       previousStatus,
       newStatus,
       canonicalLead: updatedCanonical,
     };
+
+    if (options?.idempotencyKey && dbLead.tenant_id) {
+      await supabaseDataService.security.completeIdempotency(dbLead.tenant_id, options.idempotencyKey, 200, result);
+    }
+
+    return result;
   }
 
   /**
