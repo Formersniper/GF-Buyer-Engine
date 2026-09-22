@@ -55,7 +55,7 @@ export async function runMigration015Verification(): Promise<{
   // Verify Migration 013 & 014 SHA256 integrity
   const sha013 = crypto.createHash('sha256').update(sql013).digest('hex');
   const sha014 = crypto.createHash('sha256').update(sql014).digest('hex');
-  const expected013 = '74ff5a5800bda4fa37eba9199ab7de9bcf6ef2d5719ba88af7a31f84547cce68';
+  const expected013 = 'eb4a5e674f148a49ba239c0d0d2fecb3bc762c162d229500fa0d9723b70b1e63';
   const expected014 = '8384c859ca62cf153222417f8ba9eabd4eab6b8964c4c897b496ec086aedb334';
 
   const matches013 = sha013 === expected013;

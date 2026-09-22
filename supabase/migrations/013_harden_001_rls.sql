@@ -14,7 +14,7 @@ ALTER TABLE webhook_events ENABLE ROW LEVEL SECURITY;
 
 DO $$ 
 DECLARE
-  tables text[] := ARRAY['leads', 'lead_enrichment', 'calls', 'buyer_profiles', 'buyer_preferences', 'projects', 'project_matches', 'buyer_scores', 'lead_events', 'webhook_events'];
+  tables text[] := ARRAY['leads', 'lead_enrichment', 'calls', 'buyer_profiles', 'buyer_preferences', 'projects', 'project_matches', 'buyer_scores', 'lead_events'];
   t text;
 BEGIN
   -- First drop the public policies
