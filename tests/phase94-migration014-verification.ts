@@ -41,7 +41,7 @@ export async function runMigration014Verification(): Promise<{ passed: number; f
   console.log('============================================================\n');
 
   const results: InvariantResult[] = [];
-  const migration014Path = path.join(process.cwd(), 'supabase', 'migrations', '014_harden_002_rls.sql');
+  const migration014Path = path.join(process.cwd(), 'supabase', 'migrations', '20260921114100_014_harden_002_rls.sql');
   const migration013Path = path.join(process.cwd(), 'supabase', 'migrations', '013_harden_001_rls.sql');
 
   if (!fs.existsSync(migration014Path)) {

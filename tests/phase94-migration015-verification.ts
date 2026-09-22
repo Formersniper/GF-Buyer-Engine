@@ -40,8 +40,8 @@ export async function runMigration015Verification(): Promise<{
   // PART A: Static Migration Structure Verification
   // -------------------------------------------------------------
   console.log('--- PART A: Static Migration Structure & AST Audit ---');
-  const path015 = path.join(root, 'supabase', 'migrations', '015_harden_003_historical_tenant_rls.sql');
-  const path014 = path.join(root, 'supabase', 'migrations', '014_harden_002_rls.sql');
+  const path015 = path.join(root, 'supabase', 'migrations', '20260921120000_015_harden_003_historical_tenant_rls.sql');
+  const path014 = path.join(root, 'supabase', 'migrations', '20260921114100_014_harden_002_rls.sql');
   const path013 = path.join(root, 'supabase', 'migrations', '013_harden_001_rls.sql');
 
   if (!fs.existsSync(path015)) {
