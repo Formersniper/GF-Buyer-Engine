@@ -86,6 +86,9 @@ export function createLeadsRepository(leadsStore: Map<string, Lead>): LeadsRepos
         source: input.source ?? 'MANUAL_IMPORT',
         source_reference: input.source_reference ?? null,
         status: input.status ?? 'RAW',
+        consent_status: input.consent_status ?? 'UNKNOWN',
+        consent_source: input.consent_source ?? null,
+        consent_timestamp: input.consent_timestamp ?? null,
         created_at: now,
         updated_at: now,
       };

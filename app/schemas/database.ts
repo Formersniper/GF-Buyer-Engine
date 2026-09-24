@@ -15,6 +15,9 @@ export interface Lead {
   source: string | null;
   source_reference: string | null;
   status: string; // WorkflowStatus (defaults to 'RAW')
+  consent_status?: string;
+  consent_source?: string | null;
+  consent_timestamp?: string | null;
   created_at: string;
   updated_at: string;
 }

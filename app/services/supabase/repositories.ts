@@ -515,9 +515,9 @@ export class SupabaseDataService {
             : 'Review lead dossier',
       },
       provenance: {
-        consent_status: 'CONFIRMED',
-        consent_source: lead.source ?? 'CSV_IMPORT',
-        consent_timestamp: lead.created_at,
+        consent_status: lead.consent_status ?? 'UNKNOWN',
+        consent_source: lead.consent_source ?? lead.source ?? 'MANUAL_IMPORT',
+        consent_timestamp: lead.consent_timestamp ?? lead.created_at,
         fields: {
           phone: { truth: 'KNOWN', truth_level: 'KNOWN', source: lead.source ?? 'CSV_IMPORT', confidence: 1.0, updated_at: lead.created_at },
           email: { truth: 'KNOWN', truth_level: 'KNOWN', source: lead.source ?? 'CSV_IMPORT', confidence: 1.0, updated_at: lead.created_at },
@@ -539,6 +539,13 @@ export class SupabaseDataService {
     };
 
     return gfLead;
+  }
+
+  public async toGFBuyerLead(
+    scopeOrLeadId: TenantScope | TenantContext | string,
+    maybeLeadId?: string
+  ): Promise<GFBuyerLead | null> {
+    return this.mapToGFBuyerLead(scopeOrLeadId, maybeLeadId);
   }
 }
 
