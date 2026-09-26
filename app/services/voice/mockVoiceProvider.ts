@@ -42,7 +42,9 @@ export class MockVoiceProvider implements IVoiceProvider {
     const now = new Date().toISOString();
 
     // Persist a non-fabricated, clearly marked mock call entry in the system of record
-    await supabaseDataService.calls.createCall({
+    const scope = input.tenant_id ? { tenantId: input.tenant_id } : undefined;
+    await supabaseDataService.calls.createCall(scope || {}, {
+      tenant_id: input.tenant_id,
       lead_id: input.lead_id,
       provider: 'mock',
       provider_call_id: callId,

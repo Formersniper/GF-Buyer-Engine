@@ -16,6 +16,21 @@ import {
   } from './helpers';
 import { logger } from '../../security/logger';
 
+export function normalizeLeadRecord(lead: Lead | null | undefined): Lead | null {
+  if (!lead) return null;
+  if (lead.consent_timestamp) {
+    try {
+      const ms = Date.parse(lead.consent_timestamp);
+      if (!isNaN(ms)) {
+        lead.consent_timestamp = new Date(ms).toISOString();
+      }
+    } catch {
+      // keep original representation if unparseable
+    }
+  }
+  return lead;
+}
+
 export interface LeadsRepository {
   createLead(
     scopeOrLead:
@@ -135,7 +150,7 @@ export function createLeadsRepository(leadsStore: Map<string, Lead>): LeadsRepos
                   }
                   const { data: updatedData } = await updateQuery.select().single();
 
-                  const resolved = updatedData || existingData;
+                  const resolved = normalizeLeadRecord(updatedData || existingData)!;
                   leadsStore.set(resolved.id, resolved);
                   return resolved;
                 } else {
@@ -148,8 +163,9 @@ export function createLeadsRepository(leadsStore: Map<string, Lead>): LeadsRepos
                     .single();
 
                   if (!freshErr && freshData) {
-                    leadsStore.set(freshData.id, freshData);
-                    return freshData;
+                    const mapped = normalizeLeadRecord(freshData)!;
+                    leadsStore.set(mapped.id, mapped);
+                    return mapped;
                   }
                 }
               }
@@ -163,8 +179,9 @@ export function createLeadsRepository(leadsStore: Map<string, Lead>): LeadsRepos
             throw new Error(`Supabase insert failed on public.leads: ${error.message} (code: ${error.code || 'UNKNOWN'})`);
           }
           if (data) {
-            leadsStore.set(data.id, data);
-            return data;
+            const mapped = normalizeLeadRecord(data)!;
+            leadsStore.set(mapped.id, mapped);
+            return mapped;
           }
         } catch (err: any) {
           if (err?.message?.includes('schema cache') || err?.message?.includes('PGRST204') || err?.message?.includes('not find the')) {
@@ -197,8 +214,9 @@ export function createLeadsRepository(leadsStore: Map<string, Lead>): LeadsRepos
               throw new Error(`Supabase query failed on public.leads: ${error.message}`);
             }
           } else if (data) {
-            leadsStore.set(data.id, data);
-            return data;
+            const mapped = normalizeLeadRecord(data)!;
+            leadsStore.set(mapped.id, mapped);
+            return mapped;
           } else {
             return null;
           }
@@ -234,8 +252,9 @@ export function createLeadsRepository(leadsStore: Map<string, Lead>): LeadsRepos
               throw new Error(`Supabase query failed on public.leads: ${error.message}`);
             }
           } else if (data) {
-            leadsStore.set(data.id, data);
-            return data;
+            const mapped = normalizeLeadRecord(data)!;
+            leadsStore.set(mapped.id, mapped);
+            return mapped;
           } else {
             return null;
           }
@@ -298,8 +317,9 @@ export function createLeadsRepository(leadsStore: Map<string, Lead>): LeadsRepos
              throw new Error(`Supabase query failed on public.leads: ${error.message}`);
           }
           if (data) {
-            leadsStore.set(data.id, data);
-            return data;
+            const mapped = normalizeLeadRecord(data)!;
+            leadsStore.set(mapped.id, mapped);
+            return mapped;
           }
           return null;
         } catch (e: any) {
@@ -356,8 +376,9 @@ export function createLeadsRepository(leadsStore: Map<string, Lead>): LeadsRepos
               throw new Error(`Supabase update failed on public.leads: ${error.message}`);
             }
           } else if (data) {
-            leadsStore.set(data.id, data);
-            return data;
+            const mapped = normalizeLeadRecord(data)!;
+            leadsStore.set(mapped.id, mapped);
+            return mapped;
           }
         } catch (err: any) {
           if (!err?.message?.includes('does not exist') && !err?.message?.includes('PGRST')) {
@@ -400,7 +421,8 @@ export function createLeadsRepository(leadsStore: Map<string, Lead>): LeadsRepos
           const { data, error } = await query;
           if (!error && data) {
             for (const item of data) {
-              leadsStore.set(item.id, item);
+              const mapped = normalizeLeadRecord(item)!;
+              leadsStore.set(mapped.id, mapped);
             }
           }
         } catch (err: any) {

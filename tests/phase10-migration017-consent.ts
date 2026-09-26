@@ -14,6 +14,7 @@ import fs from 'fs';
 import path from 'path';
 import { Lead } from '../app/schemas/database';
 import { supabaseDataService } from '../app/services/supabase/repositories';
+import { getSupabaseAdminClient, getSupabaseClient } from '../app/services/supabase/client';
 import { evaluateCallEligibility } from '../app/services/calls/callEligibility';
 import { DEFAULT_TENANT_ID } from '../app/schemas/tenant';
 
@@ -447,6 +448,20 @@ export async function runPhase10ConsentTests() {
       hasOnlyLeadsTable && hasNoPolicies && hasNoFunctions,
       { tablesMentioned, hasNoPolicies, hasNoFunctions }
     );
+  }
+
+  // Clean up created test leads from DB
+  const client = getSupabaseAdminClient() || getSupabaseClient();
+  if (client) {
+    const { data: testLeads } = await client
+      .from('leads')
+      .select('id')
+      .or('lead_id.like.GF-CONSENT-%');
+    if (testLeads && testLeads.length > 0) {
+      const ids = testLeads.map((l) => l.id);
+      await client.from('lead_events').delete().in('lead_id', ids);
+      await client.from('leads').delete().in('id', ids);
+    }
   }
 
   // -------------------------------------------------------------------------

@@ -61,6 +61,7 @@ async function runLiveValidation() {
   console.log(`  Policy Version: ${execution.eligibility.policyVersion}`);
   console.log(`  Reasons: ${execution.eligibility.reasons.join(', ')}`);
   console.log(`  Workflow Transition: ${execution.previousStatus} -> ${execution.newStatus}`);
+  console.log(`  Mock Call Result:`, execution.mockCallResult);
 
   // Step 4: Verify audit events recorded in Supabase
   console.log('\n--- Step 4: Verifying Audit Events in Supabase ---');

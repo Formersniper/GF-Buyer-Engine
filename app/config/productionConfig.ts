@@ -143,6 +143,94 @@ export const ENV_INVENTORY: Record<string, EnvVarDefinition> = {
     description: 'Voice provider implementation ("sarvam")',
     allowedInBrowser: false,
   },
+  VOICE_PRODUCTION_ENABLED: {
+    name: 'VOICE_PRODUCTION_ENABLED',
+    classification: 'SERVER_ONLY',
+    requiredInProduction: false,
+    sensitive: false,
+    description: 'Explicit enabler for live production outbound voice calls (default false)',
+    allowedInBrowser: false,
+  },
+  VOICE_GLOBAL_KILL_SWITCH: {
+    name: 'VOICE_GLOBAL_KILL_SWITCH',
+    classification: 'SERVER_ONLY',
+    requiredInProduction: false,
+    sensitive: false,
+    description: 'Global kill switch immediately halting all voice call dispatches (default false)',
+    allowedInBrowser: false,
+  },
+  VOICE_REAL_PROVIDER_ALLOWLIST: {
+    name: 'VOICE_REAL_PROVIDER_ALLOWLIST',
+    classification: 'SERVER_ONLY',
+    requiredInProduction: false,
+    sensitive: false,
+    description: 'Comma-separated allowlist of authorized real voice providers in production (default sarvam)',
+    allowedInBrowser: false,
+  },
+  VOICE_ROLLOUT_ENABLED: {
+    name: 'VOICE_ROLLOUT_ENABLED',
+    classification: 'SERVER_ONLY',
+    requiredInProduction: false,
+    sensitive: false,
+    description: 'Enables controlled percentage rollout for live voice calls (default false)',
+    allowedInBrowser: false,
+  },
+  VOICE_ROLLOUT_PERCENTAGE: {
+    name: 'VOICE_ROLLOUT_PERCENTAGE',
+    classification: 'SERVER_ONLY',
+    requiredInProduction: false,
+    sensitive: false,
+    description: 'Rollout percentage threshold (0-100, default 0)',
+    allowedInBrowser: false,
+  },
+  VOICE_MAX_REAL_CALLS_PER_TENANT: {
+    name: 'VOICE_MAX_REAL_CALLS_PER_TENANT',
+    classification: 'SERVER_ONLY',
+    requiredInProduction: false,
+    sensitive: false,
+    description: 'Hard cap on real voice calls per tenant during rollout (default 0)',
+    allowedInBrowser: false,
+  },
+  VOICE_MAX_REAL_CALLS_GLOBAL: {
+    name: 'VOICE_MAX_REAL_CALLS_GLOBAL',
+    classification: 'SERVER_ONLY',
+    requiredInProduction: false,
+    sensitive: false,
+    description: 'Hard global cap on real voice calls during rollout (default 0)',
+    allowedInBrowser: false,
+  },
+  VOICE_MAX_CALL_DURATION_SECONDS: {
+    name: 'VOICE_MAX_CALL_DURATION_SECONDS',
+    classification: 'SERVER_ONLY',
+    requiredInProduction: false,
+    sensitive: false,
+    description: 'Maximum permitted call duration in seconds (default 300)',
+    allowedInBrowser: false,
+  },
+  VOICE_MAX_CALL_COST_INR: {
+    name: 'VOICE_MAX_CALL_COST_INR',
+    classification: 'SERVER_ONLY',
+    requiredInProduction: false,
+    sensitive: false,
+    description: 'Maximum per-call cost ceiling in INR (default 50)',
+    allowedInBrowser: false,
+  },
+  VOICE_MAX_DAILY_COST_INR_PER_TENANT: {
+    name: 'VOICE_MAX_DAILY_COST_INR_PER_TENANT',
+    classification: 'SERVER_ONLY',
+    requiredInProduction: false,
+    sensitive: false,
+    description: 'Tenant daily cost ceiling in INR (default 1000)',
+    allowedInBrowser: false,
+  },
+  VOICE_MAX_MONTHLY_COST_INR_PER_TENANT: {
+    name: 'VOICE_MAX_MONTHLY_COST_INR_PER_TENANT',
+    classification: 'SERVER_ONLY',
+    requiredInProduction: false,
+    sensitive: false,
+    description: 'Tenant monthly cost ceiling in INR (default 25000)',
+    allowedInBrowser: false,
+  },
   VOICE_WEBHOOK_SECRET: {
     name: 'VOICE_WEBHOOK_SECRET',
     classification: 'SECRET',
@@ -471,6 +559,15 @@ export function validateProductionConfig(
   validateBoundedInt(env.MAX_ACTIVE_SARVAM_CALL_DISPATCHES, 'MAX_ACTIVE_SARVAM_CALL_DISPATCHES', 1, 1000, errors);
   validateBoundedInt(env.MAX_ACTIVE_GEMINI_OPERATIONS, 'MAX_ACTIVE_GEMINI_OPERATIONS', 1, 1000, errors);
   validateBoundedInt(env.MAX_ACTIVE_SCOUT_OPERATIONS, 'MAX_ACTIVE_SCOUT_OPERATIONS', 1, 1000, errors);
+
+  // Phase 12.2 Rollout & Cost Policy bounds
+  validateBoundedInt(env.VOICE_ROLLOUT_PERCENTAGE, 'VOICE_ROLLOUT_PERCENTAGE', 0, 100, errors);
+  validateBoundedInt(env.VOICE_MAX_REAL_CALLS_PER_TENANT, 'VOICE_MAX_REAL_CALLS_PER_TENANT', 0, 100000, errors);
+  validateBoundedInt(env.VOICE_MAX_REAL_CALLS_GLOBAL, 'VOICE_MAX_REAL_CALLS_GLOBAL', 0, 1000000, errors);
+  validateBoundedInt(env.VOICE_MAX_CALL_DURATION_SECONDS, 'VOICE_MAX_CALL_DURATION_SECONDS', 1, 3600, errors);
+  validateBoundedInt(env.VOICE_MAX_CALL_COST_INR, 'VOICE_MAX_CALL_COST_INR', 1, 10000, errors);
+  validateBoundedInt(env.VOICE_MAX_DAILY_COST_INR_PER_TENANT, 'VOICE_MAX_DAILY_COST_INR_PER_TENANT', 1, 100000, errors);
+  validateBoundedInt(env.VOICE_MAX_MONTHLY_COST_INR_PER_TENANT, 'VOICE_MAX_MONTHLY_COST_INR_PER_TENANT', 1, 1000000, errors);
 
   // 4. Production-specific rigorous constraints
   if (isProduction) {

@@ -422,9 +422,9 @@ sys.exit(0)
     if (!dbLead) throw new Error('Lead missing');
 
     // Transition from RAW -> RESOLVED -> ENRICHING -> ENRICHED
-    const t1 = await leadService.transitionStatus(ingested.lead_id, 'RESOLVED', 'Lead resolved and deduped');
-    const t2 = await leadService.transitionStatus(ingested.lead_id, 'ENRICHING', 'Starting Scout public enrichment');
-    const t3 = await leadService.transitionStatus(ingested.lead_id, 'ENRICHED', 'Scout enrichment completed');
+    const t1 = await leadService.transitionStatus('00000000-0000-0000-0000-000000000001', ingested.lead_id, 'RESOLVED', 'Lead resolved and deduped');
+    const t2 = await leadService.transitionStatus('00000000-0000-0000-0000-000000000001', ingested.lead_id, 'ENRICHING', 'Starting Scout public enrichment');
+    const t3 = await leadService.transitionStatus('00000000-0000-0000-0000-000000000001', ingested.lead_id, 'ENRICHED', 'Scout enrichment completed');
 
     assert(
       t1.workflow.status === 'RESOLVED' &&

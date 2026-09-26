@@ -42,8 +42,12 @@ export function createCallsRepository(
 ): CallsRepository {
   return {
     createCall: async (scopeOrCall, maybeCall) => {
-      const scope = resolveEffectiveTenantScope(maybeCall !== undefined ? (scopeOrCall as TenantScope) : undefined);
       const input = maybeCall !== undefined ? maybeCall : (scopeOrCall as any);
+      const scope = resolveEffectiveTenantScope(
+        maybeCall !== undefined
+          ? (scopeOrCall as TenantScope)
+          : (input && typeof input === 'object' && input.tenant_id ? { tenantId: input.tenant_id } : undefined)
+      );
 
       // Verify parent lead is accessible within scope
       const lead = await leadsRepo.getLead(scope, input.lead_id);

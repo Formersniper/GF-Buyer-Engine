@@ -22,8 +22,11 @@ import { matchingAgent } from './app/agents/MatchingAgent';
 import { LeadActivationService } from './app/services/calls/leadActivationService';
 import { evaluateCallEligibility } from './app/services/calls/callEligibility';
 import { voiceActivationQueueService } from './app/services/calls/voiceActivationQueueService';
-
 import { pipelineRecoveryWorker } from './app/services/pipeline/pipelineRecoveryWorker';
+import { leadConsentService, ConsentServiceError } from './app/services/compliance/leadConsentService';
+import { leadService } from './app/services/leads/leadService';
+import { TenantRequiredError, TenantForbiddenError } from './app/schemas/tenant';
+import { WorkflowTransitionError } from './app/services/workflow/stateMachine';
 
 export function createApp(): Express {
   // If in production, fail-fast validate configuration immediately
@@ -95,6 +98,140 @@ export function createApp(): Express {
       } else {
         res.status(500).json({ error: err.message || 'Internal processing error' });
       }
+    }
+  });
+
+  // ========================================================
+  // PHASE 11A — CANONICAL LEAD CONSENT INGRESS ENDPOINT
+  // ========================================================
+  app.post('/api/leads/:leadId/consent', requireAuth(), requireRole('SALES', 'ADMIN', 'OWNER'), async (req, res) => {
+    try {
+      const tenantId = req.auth?.tenantId;
+      if (!tenantId && !req.auth?.isPlatformAdmin) {
+        return res.status(401).json({
+          success: false,
+          error: {
+            code: 'TENANT_MISMATCH',
+            message: 'Tenant context missing in authentication',
+          },
+        });
+      }
+
+      const tenantScope = (req as any).tenantScope || {
+        tenantId,
+        isPlatformAdmin: Boolean(req.auth?.isPlatformAdmin),
+      };
+
+      const result = await leadConsentService.recordConsent(
+        tenantScope,
+        req.params.leadId,
+        req.body,
+        req.auth
+      );
+
+      return res.status(200).json(result);
+    } catch (err: unknown) {
+      if (err instanceof ConsentServiceError) {
+        return res.status(err.statusCode).json({
+          success: false,
+          error: {
+            code: err.code,
+            message: err.message,
+            details: err.details,
+          },
+        });
+      }
+
+      const message = err instanceof Error ? err.message : 'Internal error processing lead consent';
+      return res.status(500).json({
+        success: false,
+        error: {
+          code: 'INTERNAL_ERROR',
+          message,
+        },
+      });
+    }
+  });
+
+  // ========================================================
+  // PHASE 11C — AUTHORITATIVE LEAD WORKFLOW TRANSITION ENDPOINT
+  // ========================================================
+  app.post('/api/leads/:leadId/transition', requireAuth(), requireRole('SALES', 'ADMIN', 'OWNER'), async (req, res) => {
+    try {
+      const tenantId = req.auth?.tenantId;
+      if (!tenantId && !req.auth?.isPlatformAdmin) {
+        return res.status(401).json({
+          success: false,
+          error: {
+            code: 'TENANT_REQUIRED',
+            message: 'Tenant context missing in authentication',
+          },
+        });
+      }
+
+      const { leadId } = req.params;
+      const { targetStatus, eventSummary } = req.body;
+      if (!targetStatus) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_PAYLOAD',
+            message: 'targetStatus is required',
+          },
+        });
+      }
+
+      const tenantScope = { tenantId: tenantId!, isPlatformAdmin: req.auth?.isPlatformAdmin || false };
+      const actor = req.auth?.email || req.auth?.userId || 'human_operator';
+
+      const updated = await leadService.transitionStatus(
+        tenantScope,
+        leadId,
+        targetStatus,
+        eventSummary || `Workflow transition to ${targetStatus}`,
+        actor
+      );
+
+      res.status(200).json({
+        success: true,
+        lead: updated,
+      });
+    } catch (err: unknown) {
+      if (err instanceof TenantRequiredError) {
+        return res.status(400).json({
+          success: false,
+          error: { code: err.code || 'TENANT_REQUIRED', message: err.message },
+        });
+      }
+      if (err instanceof TenantForbiddenError || (err as any)?.code === 'TENANT_FORBIDDEN') {
+        return res.status(403).json({
+          success: false,
+          error: { code: 'TENANT_FORBIDDEN', message: (err as Error).message },
+        });
+      }
+      if (err instanceof WorkflowTransitionError) {
+        return res.status(422).json({
+          success: false,
+          error: { code: 'INVALID_TRANSITION', message: err.message },
+        });
+      }
+      const message = err instanceof Error ? err.message : 'Lifecycle transition failed';
+      if (message.includes('not found')) {
+        return res.status(404).json({
+          success: false,
+          error: { code: 'LEAD_NOT_FOUND', message },
+        });
+      }
+      if (message.includes('intake provenance') || message.includes('provenance')) {
+        return res.status(422).json({
+          success: false,
+          error: { code: 'PROVENANCE_VALIDATION_FAILED', message },
+        });
+      }
+      return res.status(500).json({
+        success: false,
+        error: { code: 'INTERNAL_ERROR', message },
+      });
     }
   });
 
@@ -268,7 +405,7 @@ export function createApp(): Express {
         const callsHistory = await supabaseDataService.calls.getCallsByLead(dbLead.id);
         const profile = await supabaseDataService.buyerProfiles.getBuyerProfile(tenantId, dbLead.id);
         const consentStatus = (profile?.metadata as any)?.consent_status || (profile as any)?.consent_status || (dbLead as any).consent_status;
-        const canonicalLead = await supabaseDataService.mapToGFBuyerLead(dbLead.id);
+        const canonicalLead = await supabaseDataService.mapToGFBuyerLead({ tenantId }, dbLead.id);
 
         if (!canonicalLead) {
           return res.status(422).json({ error: 'Failed to map canonical lead for execution' });
@@ -301,6 +438,7 @@ export function createApp(): Express {
         customVariables,
         systemPrompt,
         actor: 'human_operator',
+        tenantId,
       });
 
       return res.json(result);

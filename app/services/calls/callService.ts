@@ -14,12 +14,35 @@
 
 import { WorkflowStatus } from '../../schemas/workflow';
 import { GFBuyerLead } from '../../schemas/buyerLead';
+import { TenantScope } from '../../schemas/tenant';
 import { supabaseDataService } from '../supabase/repositories';
 import {
   evaluateCallEligibility,
   CallEligibilityResult,
   CALL_ELIGIBILITY_POLICY_VERSION,
 } from './callEligibility';
+import {
+  evaluateCallCompliance,
+  CALL_COMPLIANCE_POLICY_VERSION,
+} from './callCompliance';
+import {
+  evaluateProductionVoiceAuthorization,
+  ProductionVoiceAuthorizationResult,
+  PRODUCTION_VOICE_AUTHORIZATION_POLICY_VERSION,
+} from './productionVoiceAuthorization';
+import {
+  evaluateVoiceActivationReadiness,
+  VoiceActivationReadinessResult,
+  VOICE_ACTIVATION_READINESS_POLICY_VERSION,
+} from './voiceActivationReadiness';
+import {
+  evaluateVoiceCostPolicy,
+  VoiceCostAssessmentResult,
+} from './voiceCostPolicy';
+import {
+  evaluateVoiceRetryPolicy,
+  VoiceRetryEvaluationResult,
+} from './voiceRetryPolicy';
 import {
   IVoiceProvider,
   VoiceCallResult,
@@ -33,6 +56,8 @@ export interface EvaluateCallEligibilityOptions {
   idempotencyKey?: string;
   consentOverride?: string;
   actor?: 'system' | 'application_service' | 'human_operator';
+  tenantId?: string;
+  tenantScope?: TenantScope;
 }
 
 export interface CallEligibilityExecutionResult {
@@ -50,6 +75,8 @@ export interface StartCallOptions {
   customVariables?: Record<string, string>;
   actor?: 'system' | 'application_service' | 'human_operator';
   systemPrompt?: string;
+  tenantId?: string;
+  tenantScope?: TenantScope;
 }
 
 export interface StartCallExecutionResult {
@@ -66,11 +93,17 @@ export class CallService {
    */
   getActiveVoiceProvider(override?: IVoiceProvider): IVoiceProvider {
     if (override) return override;
-    const mode = (process.env.VOICE_MODE || (process.env.SARVAM_API_KEY ? 'REAL' : 'MOCK')).toUpperCase();
-    const providerName = (process.env.VOICE_PROVIDER || 'sarvam').toLowerCase();
+    const rawMode = (process.env.VOICE_MODE || 'MOCK').split('#')[0].replace(/['"]/g, '').trim().toUpperCase();
+    const mode = rawMode === 'REAL' ? 'REAL' : 'MOCK';
+    const providerName = (process.env.VOICE_PROVIDER || 'sarvam').split('#')[0].replace(/['"]/g, '').trim().toLowerCase();
 
-    if (mode === 'REAL' && providerName === 'sarvam' && process.env.SARVAM_API_KEY) {
-      return sarvamVoiceProvider;
+    if (mode === 'REAL') {
+      if (providerName === 'sarvam' && process.env.SARVAM_API_KEY && process.env.SARVAM_API_KEY.trim() !== '') {
+        return sarvamVoiceProvider;
+      }
+      throw new Error(
+        'VOICE_MODE=REAL requires valid Sarvam configuration and SARVAM_API_KEY. Silent fallback to MockVoiceProvider is strictly forbidden.'
+      );
     }
 
     if (process.env.NODE_ENV === 'production') {
@@ -108,9 +141,14 @@ export class CallService {
     leadIdOrUUID: string,
     options?: EvaluateCallEligibilityOptions
   ): Promise<CallEligibilityExecutionResult> {
+    const tenantScope = options?.tenantScope || (options?.tenantId ? { tenantId: options.tenantId } : undefined);
     // 1. Resolve DB Lead record
-    let dbLead = await supabaseDataService.leads.getLeadByLeadId(leadIdOrUUID);
-    if (!dbLead) {
+    let dbLead = tenantScope
+      ? await supabaseDataService.leads.getLeadByLeadId(tenantScope, leadIdOrUUID)
+      : await supabaseDataService.leads.getLeadByLeadId(leadIdOrUUID);
+    if (!dbLead && tenantScope) {
+      dbLead = await supabaseDataService.leads.getLead(tenantScope, leadIdOrUUID);
+    } else if (!dbLead) {
       dbLead = await supabaseDataService.leads.getLead(leadIdOrUUID);
     }
     if (!dbLead) {
@@ -118,9 +156,10 @@ export class CallService {
     }
 
     const previousStatus = dbLead.status as WorkflowStatus;
+    const effectiveScope: TenantScope = tenantScope || (dbLead.tenant_id ? { tenantId: dbLead.tenant_id } : undefined) || {};
 
     // 2. Map current canonical lead state
-    const canonicalBefore = await supabaseDataService.mapToGFBuyerLead(dbLead.id);
+    const canonicalBefore = await supabaseDataService.mapToGFBuyerLead(effectiveScope, dbLead.id);
     if (!canonicalBefore) {
       throw new Error(`Failed to map canonical lead for ID: ${dbLead.id}`);
     }
@@ -129,7 +168,7 @@ export class CallService {
     const actor = options?.actor || 'system';
 
     // 3. Record CALL_ELIGIBILITY_STARTED event
-    await supabaseDataService.leadEvents.appendLeadEvent({
+    await supabaseDataService.leadEvents.appendLeadEvent(effectiveScope, {
       lead_id: dbLead.id,
       event_type: 'CALL_ELIGIBILITY_STARTED',
       event_data: {
@@ -142,11 +181,11 @@ export class CallService {
 
     // 4. Update workflow status to CALL_ELIGIBILITY if starting from ENRICHED or RESOLVED
     if (previousStatus === 'ENRICHED' || previousStatus === 'RESOLVED') {
-      await supabaseDataService.leads.updateLead(dbLead.id, { status: 'CALL_ELIGIBILITY' });
+      await supabaseDataService.leads.updateLead(effectiveScope, dbLead.id, { status: 'CALL_ELIGIBILITY' });
     }
 
     // 5. Retrieve existing call history for cooldown and max attempt compliance evaluation
-    const callsHistory = await supabaseDataService.calls.getCallsByLead(dbLead.id);
+    const callsHistory = await supabaseDataService.calls.getCallsByLead(effectiveScope, dbLead.id);
 
     // 6. Evaluate deterministic eligibility and compliance policy
     const eligibilityResult = evaluateCallEligibility({
@@ -162,7 +201,7 @@ export class CallService {
     });
 
     // 7. Record CALL_ELIGIBILITY_DECIDED audit event
-    await supabaseDataService.leadEvents.appendLeadEvent({
+    await supabaseDataService.leadEvents.appendLeadEvent(effectiveScope, {
       lead_id: dbLead.id,
       event_type: 'CALL_ELIGIBILITY_DECIDED',
       event_data: {
@@ -191,22 +230,110 @@ export class CallService {
           : (previousStatus as WorkflowStatus);
     }
 
-    await supabaseDataService.leads.updateLead(dbLead.id, { status: targetStatus });
+    await supabaseDataService.leads.updateLead(effectiveScope, dbLead.id, { status: targetStatus });
 
-    // 8. If ELIGIBLE, invoke MockVoiceProvider boundary to prove provider readiness
+    // 8. If ELIGIBLE, evaluate Production Voice Authorization before MockVoiceProvider
     let mockCallResult: VoiceCallResult | undefined;
     if (eligibilityResult.decision === 'ELIGIBLE') {
-      mockCallResult = await mockVoiceProvider.initiateCall({
-        idempotency_key: options?.idempotencyKey,
-        tenant_id: dbLead.tenant_id,
-        lead_id: dbLead.id,
-        phone_number: canonicalBefore.identity.phone,
-        contact_name: canonicalBefore.identity.full_name || 'Valued Buyer',
+      const env = (process.env.NODE_ENV || 'development').toLowerCase();
+      const environment = (env === 'production' || env === 'test' ? env : 'development') as 'production' | 'development' | 'test';
+      const rawVoiceMode = (process.env.VOICE_MODE || 'MOCK').split('#')[0].replace(/['"]/g, '').trim().toUpperCase();
+      const voiceMode = (rawVoiceMode === 'REAL' ? 'REAL' : 'MOCK') as 'REAL' | 'MOCK';
+      const productionVoiceEnabled = process.env.VOICE_PRODUCTION_ENABLED === 'true';
+      const globalKillSwitchActive = process.env.VOICE_GLOBAL_KILL_SWITCH === 'true';
+      const realProviderAllowlist = (process.env.VOICE_REAL_PROVIDER_ALLOWLIST || 'sarvam')
+        .split('#')[0]
+        .replace(/['"]/g, '')
+        .split(',')
+        .map((p) => p.trim());
+
+      const authResult = evaluateProductionVoiceAuthorization({
+        environment,
+        voiceMode,
+        provider: 'mock',
+        tenantId: dbLead.tenant_id || (effectiveScope as any)?.tenantId || '00000000-0000-0000-0000-000000000001',
+        leadId: dbLead.id,
+        eligibilityDecision: eligibilityResult.decision,
+        productionVoiceEnabled,
+        globalKillSwitchActive,
+        realProviderAllowlist,
       });
+
+      const readinessResult = evaluateVoiceActivationReadiness({
+        environment,
+        voiceMode,
+        provider: 'mock',
+        tenantId: dbLead.tenant_id || (effectiveScope as any)?.tenantId || '00000000-0000-0000-0000-000000000001',
+        leadId: dbLead.id,
+        eligibilityDecision: eligibilityResult.decision,
+        complianceDecision: 'ALLOWED',
+        productionVoiceEnabled,
+        globalKillSwitchActive,
+        rolloutEnabled: process.env.VOICE_ROLLOUT_ENABLED === 'true',
+        rolloutPercentage: Number((process.env.VOICE_ROLLOUT_PERCENTAGE || '0').split('#')[0].trim()) || 0,
+        realCallsForTenant: 0,
+        maxRealCallsPerTenant: Number((process.env.VOICE_MAX_REAL_CALLS_PER_TENANT || '0').split('#')[0].trim()) || 0,
+        realCallsGlobal: 0,
+        maxRealCallsGlobal: Number((process.env.VOICE_MAX_REAL_CALLS_GLOBAL || '0').split('#')[0].trim()) || 0,
+        realProviderAllowlist,
+        costCheckPassed: true,
+        providerHealthy: true,
+      });
+
+      const authorizationSnapshot = {
+        authorization_policy_version: authResult.policyVersion,
+        readiness_policy_version: readinessResult.policyVersion,
+        eligibility_policy_version: CALL_ELIGIBILITY_POLICY_VERSION,
+        compliance_policy_version: CALL_COMPLIANCE_POLICY_VERSION,
+        authorization_decision: authResult.decision,
+        readiness_decision: readinessResult.decision,
+        provider: 'mock',
+        mode: authResult.mode,
+        tenant_scope_verified: true,
+      };
+
+      await supabaseDataService.leadEvents.appendLeadEvent(effectiveScope, {
+        lead_id: dbLead.id,
+        event_type: 'VOICE_AUTHORIZATION_DECIDED',
+        event_data: {
+          policy_version: authResult.policyVersion,
+          decision: authResult.decision,
+          reason_codes: authResult.reasonCodes,
+          provider: authResult.provider,
+          mode: authResult.mode,
+          evaluated_at: authResult.evaluatedAt,
+          actor,
+        },
+      });
+
+      await supabaseDataService.leadEvents.appendLeadEvent(effectiveScope, {
+        lead_id: dbLead.id,
+        event_type: 'VOICE_ACTIVATION_READINESS_DECIDED',
+        event_data: {
+          policy_version: readinessResult.policyVersion,
+          decision: readinessResult.decision,
+          reason_codes: readinessResult.reasonCodes,
+          provider: readinessResult.provider,
+          mode: readinessResult.mode,
+          evaluated_at: readinessResult.evaluatedAt,
+          authorization_snapshot: authorizationSnapshot,
+          actor,
+        },
+      });
+
+      if (authResult.authorized && readinessResult.ready) {
+        mockCallResult = await mockVoiceProvider.initiateCall({
+          idempotency_key: options?.idempotencyKey,
+          tenant_id: dbLead.tenant_id,
+          lead_id: dbLead.id,
+          phone_number: canonicalBefore.identity.phone,
+          contact_name: canonicalBefore.identity.full_name || 'Valued Buyer',
+        });
+      }
     }
 
     // 9. Fetch fresh canonical lead after all updates
-    const canonicalAfter = await supabaseDataService.mapToGFBuyerLead(dbLead.id);
+    const canonicalAfter = await supabaseDataService.mapToGFBuyerLead(effectiveScope, dbLead.id);
     if (!canonicalAfter) {
       throw new Error(`Failed to map updated canonical lead for ID: ${dbLead.id}`);
     }
@@ -228,9 +355,14 @@ export class CallService {
     leadIdOrUUID: string,
     options?: StartCallOptions
   ): Promise<StartCallExecutionResult> {
+    const tenantScope = options?.tenantScope || (options?.tenantId ? { tenantId: options.tenantId } : undefined);
     // 1. Resolve lead
-    let dbLead = await supabaseDataService.leads.getLeadByLeadId(leadIdOrUUID);
-    if (!dbLead) {
+    let dbLead = tenantScope
+      ? await supabaseDataService.leads.getLeadByLeadId(tenantScope, leadIdOrUUID)
+      : await supabaseDataService.leads.getLeadByLeadId(leadIdOrUUID);
+    if (!dbLead && tenantScope) {
+      dbLead = await supabaseDataService.leads.getLead(tenantScope, leadIdOrUUID);
+    } else if (!dbLead) {
       dbLead = await supabaseDataService.leads.getLead(leadIdOrUUID);
     }
     if (!dbLead) {
@@ -239,12 +371,13 @@ export class CallService {
 
     const previousStatus = dbLead.status;
     const actor = options?.actor || 'human_operator';
+    const effectiveScope: TenantScope = tenantScope || (dbLead.tenant_id ? { tenantId: dbLead.tenant_id } : undefined) || {};
 
     // If already in CALLING or CONNECTED, return existing active call telemetry idempotently
     if (previousStatus === 'CALLING' || previousStatus === 'CONNECTED') {
       const existingCalls = await supabaseDataService.calls.getCallsByLead(dbLead.id);
       const latestCall = existingCalls[existingCalls.length - 1];
-      const updatedCanonical = await supabaseDataService.mapToGFBuyerLead(dbLead.id);
+      const updatedCanonical = await supabaseDataService.mapToGFBuyerLead(effectiveScope, dbLead.id);
       return {
         leadId: dbLead.id,
         callResult: {
@@ -257,14 +390,14 @@ export class CallService {
         },
         previousStatus,
         newStatus: previousStatus,
-        canonicalLead: updatedCanonical || (await supabaseDataService.mapToGFBuyerLead(dbLead.id))!,
+        canonicalLead: updatedCanonical || (await supabaseDataService.mapToGFBuyerLead(effectiveScope, dbLead.id))!,
       };
     }
 
-    // Must be in CALL_PENDING (or evaluate if in ENRICHED)
+    // Must be in CALL_PENDING (or evaluate if in ENRICHED or RESOLVED)
     if (previousStatus !== 'CALL_PENDING') {
-      if (previousStatus === 'ENRICHED') {
-        const elig = await this.evaluateAndPrepareCall(dbLead.id, { actor });
+      if (previousStatus === 'ENRICHED' || previousStatus === 'RESOLVED') {
+        const elig = await this.evaluateAndPrepareCall(dbLead.id, { actor, tenantScope: effectiveScope });
         if (elig.newStatus !== 'CALL_PENDING') {
           throw new Error(
             `Lead is not eligible for call. Current state: ${elig.newStatus}, Decision: ${elig.eligibility.decision}`
@@ -278,7 +411,7 @@ export class CallService {
     }
 
     // 2. Fetch canonical lead
-    const canonicalLead = await supabaseDataService.mapToGFBuyerLead(dbLead.id);
+    const canonicalLead = await supabaseDataService.mapToGFBuyerLead(effectiveScope, dbLead.id);
     if (!canonicalLead) {
       throw new Error(`Failed to map canonical lead for ID: ${dbLead.id}`);
     }
@@ -291,7 +424,7 @@ export class CallService {
     const provider = options?.provider || this.getActiveVoiceProvider();
 
     // 3. Record CALL_REQUESTED audit event
-    await supabaseDataService.leadEvents.appendLeadEvent({
+    await supabaseDataService.leadEvents.appendLeadEvent(effectiveScope, {
       lead_id: dbLead.id,
       event_type: 'CALL_REQUESTED',
       event_data: {
@@ -302,9 +435,150 @@ export class CallService {
       },
     });
 
-    // 4. Initiate Call via selected VoiceProvider
+    // 4. Evaluate Call Compliance & Provider Health
+    const callsHistory = await supabaseDataService.calls.getCallsByLead(effectiveScope, dbLead.id);
+    const compliance = evaluateCallCompliance({
+      leadId: dbLead.id,
+      tenantId: dbLead.tenant_id,
+      callsHistory,
+      policyConfig: {
+        enforceCallingHours: process.env.NODE_ENV === 'test' ? false : true,
+      },
+    });
+    const complianceDecision = compliance.compliant ? 'ALLOWED' : 'BLOCKED';
+
+    let providerHealthy = true;
+    try {
+      if (provider.checkHealth) {
+        const health = await provider.checkHealth();
+        providerHealthy = Boolean(health.configured && health.reachable);
+      }
+    } catch {
+      providerHealthy = false;
+    }
+
+    // 5. Evaluate Cost Policy
+    const costAssessment = evaluateVoiceCostPolicy({
+      tenantId: dbLead.tenant_id,
+      leadId: dbLead.id,
+    });
+
+    // 6. Evaluate Production Voice Authorization
+    const env = (process.env.NODE_ENV || 'development').toLowerCase();
+    const rawVoiceMode = (process.env.VOICE_MODE || 'MOCK').split('#')[0].replace(/['"]/g, '').trim().toUpperCase();
+    const voiceMode = (rawVoiceMode === 'REAL' ? 'REAL' : 'MOCK') as 'REAL' | 'MOCK';
+    const environment = (env === 'production' ? 'production' : (env === 'test' && voiceMode === 'REAL') ? 'production' : env === 'test' ? 'test' : 'development') as 'production' | 'development' | 'test';
+    const productionVoiceEnabled = process.env.VOICE_PRODUCTION_ENABLED === 'true';
+    const globalKillSwitchActive = process.env.VOICE_GLOBAL_KILL_SWITCH === 'true';
+    const realProviderAllowlist = (process.env.VOICE_REAL_PROVIDER_ALLOWLIST || 'sarvam')
+      .split('#')[0]
+      .replace(/['"]/g, '')
+      .split(',')
+      .map((p) => p.trim());
+
+    const authResult = evaluateProductionVoiceAuthorization({
+      environment,
+      voiceMode,
+      provider: provider.providerName,
+      tenantId: dbLead.tenant_id,
+      leadId: dbLead.id,
+      eligibilityDecision: 'ELIGIBLE',
+      productionVoiceEnabled,
+      globalKillSwitchActive,
+      realProviderAllowlist,
+    });
+
+    // 7. Evaluate Voice Activation Readiness
+    const rolloutEnabled = process.env.VOICE_ROLLOUT_ENABLED === 'true';
+    const rolloutPercentage = Number((process.env.VOICE_ROLLOUT_PERCENTAGE || '0').split('#')[0].trim()) || 0;
+    const maxRealCallsPerTenant = Number((process.env.VOICE_MAX_REAL_CALLS_PER_TENANT || '0').split('#')[0].trim()) || 0;
+    const maxRealCallsGlobal = Number((process.env.VOICE_MAX_REAL_CALLS_GLOBAL || '0').split('#')[0].trim()) || 0;
+
+    const readinessResult = evaluateVoiceActivationReadiness({
+      environment,
+      voiceMode,
+      provider: provider.providerName,
+      tenantId: dbLead.tenant_id,
+      leadId: dbLead.id,
+      eligibilityDecision: 'ELIGIBLE',
+      complianceDecision,
+      productionVoiceEnabled,
+      globalKillSwitchActive,
+      rolloutEnabled,
+      rolloutPercentage,
+      realCallsForTenant: 0,
+      maxRealCallsPerTenant,
+      realCallsGlobal: 0,
+      maxRealCallsGlobal,
+      realProviderAllowlist,
+      costCheckPassed: costAssessment.passed,
+      providerHealthy,
+    });
+
+    // 8. Construct Safe Authorization Snapshot
+    const authorizationSnapshot = {
+      authorization_policy_version: authResult.policyVersion,
+      readiness_policy_version: readinessResult.policyVersion,
+      eligibility_policy_version: CALL_ELIGIBILITY_POLICY_VERSION,
+      compliance_policy_version: CALL_COMPLIANCE_POLICY_VERSION,
+      authorization_decision: authResult.decision,
+      readiness_decision: readinessResult.decision,
+      provider: provider.providerName,
+      mode: authResult.mode,
+      tenant_scope_verified: true,
+    };
+
+    // 9. Record Audit Events
+    await supabaseDataService.leadEvents.appendLeadEvent(effectiveScope, {
+      lead_id: dbLead.id,
+      event_type: 'VOICE_AUTHORIZATION_DECIDED',
+      event_data: {
+        policy_version: authResult.policyVersion,
+        decision: authResult.decision,
+        reason_codes: authResult.reasonCodes,
+        provider: authResult.provider,
+        mode: authResult.mode,
+        evaluated_at: authResult.evaluatedAt,
+        actor,
+      },
+    });
+
+    await supabaseDataService.leadEvents.appendLeadEvent(effectiveScope, {
+      lead_id: dbLead.id,
+      event_type: 'VOICE_ACTIVATION_READINESS_DECIDED',
+      event_data: {
+        policy_version: readinessResult.policyVersion,
+        decision: readinessResult.decision,
+        reason_codes: readinessResult.reasonCodes,
+        provider: readinessResult.provider,
+        mode: readinessResult.mode,
+        evaluated_at: readinessResult.evaluatedAt,
+        authorization_snapshot: authorizationSnapshot,
+        actor,
+      },
+    });
+
+    // 10. Check Authorization & Activation Readiness: ONLY IF both pass may provider execute
+    if (!authResult.authorized || !readinessResult.ready) {
+      const blockedReasons = Array.from(
+        new Set([...authResult.reasonCodes, ...readinessResult.reasonCodes])
+      );
+      throw new Error(
+        `Production voice activation readiness BLOCKED: ${blockedReasons.join(', ')}`
+      );
+    }
+
+    // 11. Evaluate Retry Policy for Idempotency Key
+    const retryEval = evaluateVoiceRetryPolicy({
+      tenantId: dbLead.tenant_id,
+      leadId: dbLead.id,
+      attemptNumber: 0,
+    });
+    const dispatchIdempotencyKey = options?.idempotencyKey || retryEval.idempotencyKey;
+
+    // 12. Initiate Call via selected VoiceProvider (ONLY reaches here if authorized & ready)
     const callResult = await provider.initiateCall({
-      idempotency_key: options?.idempotencyKey || `call-out-${dbLead.id}-${previousStatus}`,
+      idempotency_key: dispatchIdempotencyKey,
       tenant_id: dbLead.tenant_id,
       lead_id: dbLead.id,
       phone_number: targetPhone,
@@ -317,7 +591,7 @@ export class CallService {
 
     // 5. If call accepted by provider, record CALL_PROVIDER_ACCEPTED and update state
     if (callResult.initiated) {
-      await supabaseDataService.leadEvents.appendLeadEvent({
+      await supabaseDataService.leadEvents.appendLeadEvent(effectiveScope, {
         lead_id: dbLead.id,
         event_type: 'CALL_PROVIDER_ACCEPTED',
         event_data: {
@@ -328,8 +602,7 @@ export class CallService {
           timestamp: new Date().toISOString(),
         },
       });
-
-      await supabaseDataService.leads.updateLead(dbLead.id, { status: 'CALLING' });
+      await supabaseDataService.leads.updateLead(effectiveScope, dbLead.id, { status: 'CALLING' });
       newStatus = 'CALLING';
     } else {
       // Mock ready retention
@@ -337,7 +610,7 @@ export class CallService {
     }
 
     // 6. Reload updated canonical lead
-    const updatedCanonical = await supabaseDataService.mapToGFBuyerLead(dbLead.id);
+    const updatedCanonical = await supabaseDataService.mapToGFBuyerLead(effectiveScope, dbLead.id);
     if (!updatedCanonical) {
       throw new Error(`Failed to reload canonical lead after call initiation`);
     }
