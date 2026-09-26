@@ -292,6 +292,12 @@ async function runPhase122Tests() {
     process.env.VOICE_ROLLOUT_PERCENTAGE = '100';
     process.env.VOICE_REAL_PROVIDER_ALLOWLIST = 'sarvam';
     process.env.VOICE_GLOBAL_KILL_SWITCH = 'false';
+    process.env.VOICE_PILOT_ENABLED = 'true';
+    process.env.VOICE_PILOT_TENANT_ID = testTenantId;
+    process.env.VOICE_PILOT_LEAD_ID = testLeadId;
+    process.env.VOICE_PILOT_KILL_SWITCH = 'false';
+    process.env.VOICE_PILOT_MAX_REAL_CALLS_GLOBAL = '10';
+    process.env.VOICE_PILOT_MAX_REAL_CALLS_PER_TENANT = '10';
 
     spyCallsCount = 0;
     const startRes = await callService.startCall(testLeadId, {
@@ -373,7 +379,8 @@ async function runPhase122Tests() {
       'P12.2-EXEC-04',
       'Blocked readiness request throws error and spy provider initiateCall is executed 0 times',
       blockedError !== null &&
-        blockedError.message.includes('Production voice activation readiness BLOCKED') &&
+        (blockedError.message.includes('Production voice activation readiness BLOCKED') ||
+          blockedError.message.includes('Controlled real voice pilot BLOCKED')) &&
         spyCallsCount === 0
     );
   } finally {

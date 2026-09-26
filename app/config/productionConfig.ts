@@ -231,6 +231,54 @@ export const ENV_INVENTORY: Record<string, EnvVarDefinition> = {
     description: 'Tenant monthly cost ceiling in INR (default 25000)',
     allowedInBrowser: false,
   },
+  VOICE_PILOT_ENABLED: {
+    name: 'VOICE_PILOT_ENABLED',
+    classification: 'SERVER_ONLY',
+    requiredInProduction: false,
+    sensitive: false,
+    description: 'Enables controlled real voice pilot execution gate (default false)',
+    allowedInBrowser: false,
+  },
+  VOICE_PILOT_TENANT_ID: {
+    name: 'VOICE_PILOT_TENANT_ID',
+    classification: 'SERVER_ONLY',
+    requiredInProduction: false,
+    sensitive: false,
+    description: 'Authoritative tenant ID authorized for controlled pilot',
+    allowedInBrowser: false,
+  },
+  VOICE_PILOT_LEAD_ID: {
+    name: 'VOICE_PILOT_LEAD_ID',
+    classification: 'SERVER_ONLY',
+    requiredInProduction: false,
+    sensitive: false,
+    description: 'Authoritative lead ID authorized for controlled pilot',
+    allowedInBrowser: false,
+  },
+  VOICE_PILOT_KILL_SWITCH: {
+    name: 'VOICE_PILOT_KILL_SWITCH',
+    classification: 'SERVER_ONLY',
+    requiredInProduction: false,
+    sensitive: false,
+    description: 'Kill switch dedicated to controlled real voice pilot (default false)',
+    allowedInBrowser: false,
+  },
+  VOICE_PILOT_MAX_REAL_CALLS_GLOBAL: {
+    name: 'VOICE_PILOT_MAX_REAL_CALLS_GLOBAL',
+    classification: 'SERVER_ONLY',
+    requiredInProduction: false,
+    sensitive: false,
+    description: 'Global real call limit during pilot (default 0, max 1 during pilot)',
+    allowedInBrowser: false,
+  },
+  VOICE_PILOT_MAX_REAL_CALLS_PER_TENANT: {
+    name: 'VOICE_PILOT_MAX_REAL_CALLS_PER_TENANT',
+    classification: 'SERVER_ONLY',
+    requiredInProduction: false,
+    sensitive: false,
+    description: 'Tenant real call limit during pilot (default 0, max 1 during pilot)',
+    allowedInBrowser: false,
+  },
   VOICE_WEBHOOK_SECRET: {
     name: 'VOICE_WEBHOOK_SECRET',
     classification: 'SECRET',
@@ -568,6 +616,10 @@ export function validateProductionConfig(
   validateBoundedInt(env.VOICE_MAX_CALL_COST_INR, 'VOICE_MAX_CALL_COST_INR', 1, 10000, errors);
   validateBoundedInt(env.VOICE_MAX_DAILY_COST_INR_PER_TENANT, 'VOICE_MAX_DAILY_COST_INR_PER_TENANT', 1, 100000, errors);
   validateBoundedInt(env.VOICE_MAX_MONTHLY_COST_INR_PER_TENANT, 'VOICE_MAX_MONTHLY_COST_INR_PER_TENANT', 1, 1000000, errors);
+
+  // Phase 12.3 Pilot bounds
+  validateBoundedInt(env.VOICE_PILOT_MAX_REAL_CALLS_GLOBAL, 'VOICE_PILOT_MAX_REAL_CALLS_GLOBAL', 0, 10, errors);
+  validateBoundedInt(env.VOICE_PILOT_MAX_REAL_CALLS_PER_TENANT, 'VOICE_PILOT_MAX_REAL_CALLS_PER_TENANT', 0, 10, errors);
 
   // 4. Production-specific rigorous constraints
   if (isProduction) {

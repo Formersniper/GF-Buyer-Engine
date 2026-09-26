@@ -418,7 +418,8 @@ async function runPhase121Tests() {
       'CallService returned blocked authorization/readiness error when VOICE_PRODUCTION_ENABLED=false / non-production',
       callError !== null &&
         (callError.message.includes('Production voice authorization BLOCKED') ||
-          callError.message.includes('Production voice activation readiness BLOCKED'))
+          callError.message.includes('Production voice activation readiness BLOCKED') ||
+          callError.message.includes('Controlled real voice pilot BLOCKED'))
     );
 
     assert(

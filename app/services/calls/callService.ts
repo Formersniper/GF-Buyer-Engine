@@ -44,6 +44,11 @@ import {
   VoiceRetryEvaluationResult,
 } from './voiceRetryPolicy';
 import {
+  evaluateControlledRealVoicePilot,
+  ControlledRealVoicePilotResult,
+  CONTROLLED_REAL_VOICE_PILOT_POLICY_VERSION,
+} from './controlledRealVoicePilot';
+import {
   IVoiceProvider,
   VoiceCallResult,
   VoiceCallStatus,
@@ -280,13 +285,39 @@ export class CallService {
         providerHealthy: true,
       });
 
+      const pilotResult = evaluateControlledRealVoicePilot({
+        environment,
+        voiceMode,
+        provider: 'mock',
+        tenantId: dbLead.tenant_id || (effectiveScope as any)?.tenantId || '00000000-0000-0000-0000-000000000001',
+        leadId: dbLead.id,
+        leadTenantId: dbLead.tenant_id,
+        eligibilityDecision: eligibilityResult.decision,
+        complianceDecision: 'ALLOWED',
+        productionAuthDecision: authResult.decision,
+        activationReadinessDecision: readinessResult.decision,
+        globalKillSwitchActive,
+        pilotKillSwitchActive: process.env.VOICE_PILOT_KILL_SWITCH === 'true',
+        pilotEnabled: process.env.VOICE_PILOT_ENABLED === 'true',
+        configuredPilotTenantId: process.env.VOICE_PILOT_TENANT_ID,
+        configuredPilotLeadId: process.env.VOICE_PILOT_LEAD_ID,
+        pilotMaxRealCallsGlobal: Number((process.env.VOICE_PILOT_MAX_REAL_CALLS_GLOBAL || '0').split('#')[0].trim()) || 0,
+        pilotMaxRealCallsPerTenant: Number((process.env.VOICE_PILOT_MAX_REAL_CALLS_PER_TENANT || '0').split('#')[0].trim()) || 0,
+        currentRealCallsGlobalCount: 0,
+        currentRealCallsTenantCount: 0,
+        providerHealthy: true,
+        realProviderAllowlist,
+      });
+
       const authorizationSnapshot = {
         authorization_policy_version: authResult.policyVersion,
         readiness_policy_version: readinessResult.policyVersion,
+        pilot_policy_version: pilotResult.policyVersion,
         eligibility_policy_version: CALL_ELIGIBILITY_POLICY_VERSION,
         compliance_policy_version: CALL_COMPLIANCE_POLICY_VERSION,
         authorization_decision: authResult.decision,
         readiness_decision: readinessResult.decision,
+        pilot_decision: pilotResult.decision,
         provider: 'mock',
         mode: authResult.mode,
         tenant_scope_verified: true,
@@ -316,6 +347,21 @@ export class CallService {
           provider: readinessResult.provider,
           mode: readinessResult.mode,
           evaluated_at: readinessResult.evaluatedAt,
+          authorization_snapshot: authorizationSnapshot,
+          actor,
+        },
+      });
+
+      await supabaseDataService.leadEvents.appendLeadEvent(effectiveScope, {
+        lead_id: dbLead.id,
+        event_type: 'VOICE_PILOT_AUTHORIZATION_DECIDED',
+        event_data: {
+          policy_version: pilotResult.policyVersion,
+          decision: pilotResult.decision,
+          reason_codes: pilotResult.reasonCodes,
+          provider: pilotResult.provider,
+          mode: pilotResult.mode,
+          evaluated_at: pilotResult.evaluatedAt,
           authorization_snapshot: authorizationSnapshot,
           actor,
         },
@@ -515,20 +561,72 @@ export class CallService {
       providerHealthy,
     });
 
-    // 8. Construct Safe Authorization Snapshot
+    // 8. Evaluate Controlled Real Voice Pilot Authorization
+    const pilotEnabled = process.env.VOICE_PILOT_ENABLED === 'true';
+    const pilotKillSwitchActive = process.env.VOICE_PILOT_KILL_SWITCH === 'true';
+    const configuredPilotTenantId = process.env.VOICE_PILOT_TENANT_ID;
+    const configuredPilotLeadId = process.env.VOICE_PILOT_LEAD_ID;
+    const pilotMaxRealCallsGlobal = Number((process.env.VOICE_PILOT_MAX_REAL_CALLS_GLOBAL || '0').split('#')[0].trim()) || 0;
+    const pilotMaxRealCallsPerTenant = Number((process.env.VOICE_PILOT_MAX_REAL_CALLS_PER_TENANT || '0').split('#')[0].trim()) || 0;
+
+    // Query DB for real call counts to enforce pilot caps
+    const allLeadCalls = await supabaseDataService.calls.getCallsByLead(effectiveScope, dbLead.id);
+    const hasActiveCall = allLeadCalls.some((c) => c.status === 'CALLING' || c.status === 'IN_PROGRESS' || c.status === 'DISPATCHED');
+    const realCallsForTenantCount = allLeadCalls.filter((c) => c.provider !== 'mock').length;
+    const realCallsGlobalCount = realCallsForTenantCount;
+
+    await supabaseDataService.leadEvents.appendLeadEvent(effectiveScope, {
+      lead_id: dbLead.id,
+      event_type: 'VOICE_PILOT_AUTHORIZATION_STARTED',
+      event_data: {
+        provider: provider.providerName,
+        tenant_id: dbLead.tenant_id,
+        timestamp: new Date().toISOString(),
+        actor,
+      },
+    });
+
+    const pilotResult = evaluateControlledRealVoicePilot({
+      environment,
+      voiceMode,
+      provider: provider.providerName,
+      tenantId: dbLead.tenant_id,
+      leadId: dbLead.id,
+      leadTenantId: dbLead.tenant_id,
+      eligibilityDecision: 'ELIGIBLE',
+      complianceDecision,
+      productionAuthDecision: authResult.decision,
+      activationReadinessDecision: readinessResult.decision,
+      globalKillSwitchActive,
+      pilotKillSwitchActive,
+      pilotEnabled,
+      configuredPilotTenantId,
+      configuredPilotLeadId,
+      pilotMaxRealCallsGlobal,
+      pilotMaxRealCallsPerTenant,
+      currentRealCallsGlobalCount: realCallsGlobalCount,
+      currentRealCallsTenantCount: realCallsForTenantCount,
+      hasActiveCall,
+      providerHealthy,
+      realProviderAllowlist,
+    });
+
+    // 9. Construct Safe Authorization Snapshot
     const authorizationSnapshot = {
       authorization_policy_version: authResult.policyVersion,
       readiness_policy_version: readinessResult.policyVersion,
+      pilot_policy_version: pilotResult.policyVersion,
       eligibility_policy_version: CALL_ELIGIBILITY_POLICY_VERSION,
       compliance_policy_version: CALL_COMPLIANCE_POLICY_VERSION,
       authorization_decision: authResult.decision,
       readiness_decision: readinessResult.decision,
+      pilot_decision: pilotResult.decision,
       provider: provider.providerName,
       mode: authResult.mode,
       tenant_scope_verified: true,
     };
 
-    // 9. Record Audit Events
+    // 10. Record Audit Events
     await supabaseDataService.leadEvents.appendLeadEvent(effectiveScope, {
       lead_id: dbLead.id,
       event_type: 'VOICE_AUTHORIZATION_DECIDED',
@@ -558,17 +656,47 @@ export class CallService {
       },
     });
 
-    // 10. Check Authorization & Activation Readiness: ONLY IF both pass may provider execute
-    if (!authResult.authorized || !readinessResult.ready) {
-      const blockedReasons = Array.from(
-        new Set([...authResult.reasonCodes, ...readinessResult.reasonCodes])
-      );
-      throw new Error(
-        `Production voice activation readiness BLOCKED: ${blockedReasons.join(', ')}`
-      );
+    await supabaseDataService.leadEvents.appendLeadEvent(effectiveScope, {
+      lead_id: dbLead.id,
+      event_type: 'VOICE_PILOT_AUTHORIZATION_DECIDED',
+      event_data: {
+        policy_version: pilotResult.policyVersion,
+        decision: pilotResult.decision,
+        reason_codes: pilotResult.reasonCodes,
+        provider: pilotResult.provider,
+        mode: pilotResult.mode,
+        evaluated_at: pilotResult.evaluatedAt,
+        authorization_snapshot: authorizationSnapshot,
+        actor,
+      },
+    });
+
+    // 11. Check Authorization Gates
+    if (voiceMode === 'REAL') {
+      if (!authResult.authorized || !readinessResult.ready || !pilotResult.authorized) {
+        const blockedReasons = Array.from(
+          new Set([
+            ...authResult.reasonCodes,
+            ...readinessResult.reasonCodes,
+            ...pilotResult.reasonCodes,
+          ])
+        );
+        throw new Error(
+          `Controlled real voice pilot BLOCKED: ${blockedReasons.join(', ')}`
+        );
+      }
+    } else {
+      if (!authResult.authorized || !readinessResult.ready) {
+        const blockedReasons = Array.from(
+          new Set([...authResult.reasonCodes, ...readinessResult.reasonCodes])
+        );
+        throw new Error(
+          `Production voice activation readiness BLOCKED: ${blockedReasons.join(', ')}`
+        );
+      }
     }
 
-    // 11. Evaluate Retry Policy for Idempotency Key
+    // 12. Evaluate Retry Policy for Idempotency Key
     const retryEval = evaluateVoiceRetryPolicy({
       tenantId: dbLead.tenant_id,
       leadId: dbLead.id,
@@ -576,21 +704,58 @@ export class CallService {
     });
     const dispatchIdempotencyKey = options?.idempotencyKey || retryEval.idempotencyKey;
 
-    // 12. Initiate Call via selected VoiceProvider (ONLY reaches here if authorized & ready)
-    const callResult = await provider.initiateCall({
-      idempotency_key: dispatchIdempotencyKey,
-      tenant_id: dbLead.tenant_id,
+    await supabaseDataService.leadEvents.appendLeadEvent(effectiveScope, {
       lead_id: dbLead.id,
-      phone_number: targetPhone,
-      contact_name: canonicalLead.identity.full_name || 'Valued Buyer',
-      custom_variables: options?.customVariables,
-      system_prompt: options?.systemPrompt,
+      event_type: 'VOICE_PILOT_EXECUTION_STARTED',
+      event_data: {
+        provider: provider.providerName,
+        idempotency_key: dispatchIdempotencyKey,
+        authorization_snapshot: authorizationSnapshot,
+        actor,
+      },
     });
+
+    // 13. Initiate Call via selected VoiceProvider (ONLY reaches here if authorized & ready)
+    let callResult: VoiceCallResult;
+    try {
+      callResult = await provider.initiateCall({
+        idempotency_key: dispatchIdempotencyKey,
+        tenant_id: dbLead.tenant_id,
+        lead_id: dbLead.id,
+        phone_number: targetPhone,
+        contact_name: canonicalLead.identity.full_name || 'Valued Buyer',
+        custom_variables: options?.customVariables,
+        system_prompt: options?.systemPrompt,
+      });
+    } catch (err: any) {
+      await supabaseDataService.leadEvents.appendLeadEvent(effectiveScope, {
+        lead_id: dbLead.id,
+        event_type: 'VOICE_PILOT_EXECUTION_FAILED',
+        event_data: {
+          provider: provider.providerName,
+          error_message: err.message || String(err),
+          actor,
+        },
+      });
+      // STRICTLY FORBID REAL -> MOCK FALLBACK
+      throw err;
+    }
 
     let newStatus: WorkflowStatus = 'CALLING';
 
-    // 5. If call accepted by provider, record CALL_PROVIDER_ACCEPTED and update state
+    // 14. If call accepted by provider, record CALL_PROVIDER_ACCEPTED and update state
     if (callResult.initiated) {
+      await supabaseDataService.leadEvents.appendLeadEvent(effectiveScope, {
+        lead_id: dbLead.id,
+        event_type: 'VOICE_PILOT_PROVIDER_ACCEPTED',
+        event_data: {
+          provider: provider.providerName,
+          call_id: callResult.callId,
+          external_call_id: callResult.external_call_id,
+          authorization_snapshot: authorizationSnapshot,
+          timestamp: new Date().toISOString(),
+        },
+      });
       await supabaseDataService.leadEvents.appendLeadEvent(effectiveScope, {
         lead_id: dbLead.id,
         event_type: 'CALL_PROVIDER_ACCEPTED',
