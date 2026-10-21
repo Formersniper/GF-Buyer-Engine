@@ -43,7 +43,7 @@ async function runTests() {
   console.log('2. Configuring CRM Destination...');
   const config = await dataService.crmConfigs.createConfig(tenantScope, {
     provider_name: 'TestCRM',
-    destination_type: 'MOCK_SALES_CHANNEL',
+    destination_type: 'WEBHOOK',
     endpoint_url: 'https://api.testcrm.example.com',
     is_enabled: true,
     dry_run_mode: true,

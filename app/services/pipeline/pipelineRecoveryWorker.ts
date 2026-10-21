@@ -1,4 +1,5 @@
 import { supabaseDataService } from '../supabase/repositories';
+import { isNetworkFetchError } from '../supabase/repos/pipelineExecutionsRepo';
 import { buyerPipelineCoordinator } from './buyerPipelineCoordinator';
 import { logger } from '../security/logger';
 import { generateUUID } from '../supabase/repos/helpers';
@@ -14,6 +15,8 @@ export class PipelineRecoveryWorker {
   private workerId: string;
   private intervalId: NodeJS.Timeout | null = null;
   private options: PipelineRecoveryWorkerOptions;
+  private consecutiveConnectionFailures = 0;
+  private lastNetworkLogTime = 0;
 
   constructor(options?: Partial<PipelineRecoveryWorkerOptions>) {
     this.workerId = `worker-${generateUUID()}`;
@@ -48,17 +51,45 @@ export class PipelineRecoveryWorker {
 
   private async poll() {
     if (!this.isRunning) return;
+    let nextDelayMs = this.options.pollingIntervalMs;
+
     try {
       await this.processNextExecution();
+      this.consecutiveConnectionFailures = 0;
     } catch (err: any) {
-      logger.error('Worker polling error', {
-        service: 'PipelineRecoveryWorker',
-        error_category: 'WORKER_ERROR',
-        data: { error: err.message }
-      });
+      const isConnError = isNetworkFetchError(err) || (
+        typeof err?.message === 'string' && (
+          err.message.includes('fetch failed') ||
+          err.message.includes('Failed to fetch') ||
+          err.message.includes('ENOTFOUND') ||
+          err.message.includes('ECONNREFUSED') ||
+          err.message.includes('ETIMEDOUT')
+        )
+      );
+
+      if (isConnError) {
+        this.consecutiveConnectionFailures++;
+        const backoffMultiplier = Math.pow(2, Math.min(this.consecutiveConnectionFailures - 1, 4));
+        nextDelayMs = Math.min(this.options.pollingIntervalMs * backoffMultiplier, 60000);
+
+        const now = Date.now();
+        if (this.consecutiveConnectionFailures === 1 || now - this.lastNetworkLogTime >= 60000) {
+          logger.warn(`Worker polling network connectivity failure (consecutive failures: ${this.consecutiveConnectionFailures}, next retry in ${nextDelayMs}ms)`, {
+            service: 'PipelineRecoveryWorker',
+            data: { error: err?.message || String(err), consecutiveFailures: this.consecutiveConnectionFailures, nextDelayMs }
+          });
+          this.lastNetworkLogTime = now;
+        }
+      } else {
+        logger.error('Worker polling error', {
+          service: 'PipelineRecoveryWorker',
+          error_category: 'WORKER_ERROR',
+          data: { error: err?.message || String(err) }
+        });
+      }
     } finally {
       if (this.isRunning) {
-        this.intervalId = setTimeout(() => this.poll(), this.options.pollingIntervalMs);
+        this.intervalId = setTimeout(() => this.poll(), nextDelayMs);
       }
     }
   }

@@ -25,6 +25,14 @@ async function runConcurrencySuite() {
   console.log('============================================================\n');
 
   const validUuidTenant = '12345678-1234-1234-1234-123456789012';
+  try {
+    await supabaseDataService.tenants.createTenant({
+      id: validUuidTenant,
+      name: 'Security Test Tenant',
+      slug: `security-test-${Date.now()}`,
+      status: 'ACTIVE'
+    });
+  } catch {}
 
   // Test 1: Resource locking prevents concurrent duplicate enrichment
   try {

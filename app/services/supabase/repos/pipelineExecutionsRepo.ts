@@ -29,6 +29,38 @@ export function isMissingClaimRpcError(err: any): boolean {
   return false;
 }
 
+export function isNetworkFetchError(err: any): boolean {
+  if (!err) return false;
+  const code = String(err?.code || '');
+  const message = typeof err?.message === 'string' ? err.message : String(err);
+
+  // Exclude PostgREST schema errors, Postgres syntax/undefined_function, and Auth/RLS errors
+  if (
+    code === 'PGRST202' ||
+    code === '42883' ||
+    code === '42703' ||
+    code === '42501' ||
+    code === 'PGRST301' ||
+    code === 'PGRST204' ||
+    code === 'PGRST205'
+  ) {
+    return false;
+  }
+
+  return (
+    message.includes('fetch failed') ||
+    message.includes('TypeError: fetch failed') ||
+    message.includes('Failed to fetch') ||
+    message.includes('ENOTFOUND') ||
+    message.includes('ECONNREFUSED') ||
+    message.includes('ETIMEDOUT') ||
+    code === 'FETCH_ERROR' ||
+    code === 'ENOTFOUND' ||
+    code === 'ECONNREFUSED' ||
+    code === 'ETIMEDOUT'
+  );
+}
+
 export interface CreatePipelineExecutionInput {
   lead_id: string;
   call_id?: string | null;
@@ -239,8 +271,11 @@ export function createPipelineExecutionsRepository(store: Map<string, PipelineEx
           
 
           if (error) {
+            if (isNetworkFetchError(error)) {
+              throw new Error(`Supabase connection failed during pipeline claim: ${error.message || 'fetch failed'}`);
+            }
             if (isMissingClaimRpcError(error)) {
-              // fallback
+              // Fallback to in-memory store ONLY if the DB RPC function has not been created yet in local dev schema
             } else {
               logger.error('[Supabase RPC Error] claim_pipeline_execution:', { service: "supabase-repo", error_category: "DATABASE_ERROR", data: { error: error.message } });
               throw new Error(`Failed to claim pipeline execution: ${error.message}`);
@@ -253,7 +288,9 @@ export function createPipelineExecutionsRepository(store: Map<string, PipelineEx
             return null; // Nothing to claim
           }
         } catch (err: any) {
-
+          if (isNetworkFetchError(err)) {
+            throw new Error(`Supabase connection failed during pipeline claim: ${err.message || 'fetch failed'}`);
+          }
           if (!isMissingClaimRpcError(err)) {
              throw err;
           }

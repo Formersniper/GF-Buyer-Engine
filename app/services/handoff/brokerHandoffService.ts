@@ -24,6 +24,7 @@ import {
 import { supabaseDataService } from '../supabase/repositories';
 import { crmRouter } from './crmRouter';
 import { BrokerHandoffChannel, mockBrokerHandoffChannel, WebhookBrokerHandoffChannel } from './channels/brokerHandoffChannel';
+import { GoogleSheetsBrokerHandoffChannel } from './channels/googleSheetsChannel';
 import { projectMatchingService } from '../matching/projectMatchingService';
 
 export class BrokerHandoffService {
@@ -603,8 +604,8 @@ ${recAction}
         };
       }
 
-      // 3. Unsupported destination type (not WEBHOOK)
-      if (enabledConfig.destination_type !== 'WEBHOOK') {
+      // 3. Unsupported destination type (must be WEBHOOK or GOOGLE_SHEETS)
+      if (enabledConfig.destination_type !== 'WEBHOOK' && enabledConfig.destination_type !== 'GOOGLE_SHEETS') {
         const errorMsg = 'CRM destination type is unsupported';
         const channelName = enabledConfig.provider_name || 'UNKNOWN';
         await supabaseDataService.brokerHandoffs.updateDispatchStatus(
@@ -636,77 +637,114 @@ ${recAction}
         };
       }
 
-      // 4. Missing endpoint URL
-      if (!enabledConfig.endpoint_url || !enabledConfig.endpoint_url.trim()) {
-        const errorMsg = 'CRM webhook endpoint is missing';
-        const channelName = enabledConfig.provider_name || 'WEBHOOK_SALES_CHANNEL';
-        await supabaseDataService.brokerHandoffs.updateDispatchStatus(
-          tenantScope,
-          handoffId,
-          'FAILED',
-          null,
-          channelName,
-          { error: errorMsg, retryEligible: false, lastAttemptAt: new Date().toISOString() }
-        );
-        await supabaseDataService.leadEvents.appendLeadEvent(tenantScope, {
-          lead_id: handoff.lead_id,
-          event_type: 'DISPATCH_FAILED',
-          event_data: {
-            handoff_id: handoffId,
+      // 4. Validate Destination Specifics
+      if (enabledConfig.destination_type === 'GOOGLE_SHEETS') {
+        const meta = (enabledConfig.metadata as Record<string, unknown> | null) || {};
+        const spreadsheetId = (meta.spreadsheet_id as string) || (enabledConfig.endpoint_url || '').trim();
+        if (!spreadsheetId) {
+          const errorMsg = 'Google Sheets spreadsheet ID is missing';
+          const channelName = enabledConfig.provider_name || 'GOOGLE_SHEETS_CHANNEL';
+          await supabaseDataService.brokerHandoffs.updateDispatchStatus(
+            tenantScope,
+            handoffId,
+            'FAILED',
+            null,
+            channelName,
+            { error: errorMsg, retryEligible: false, lastAttemptAt: new Date().toISOString() }
+          );
+          await supabaseDataService.leadEvents.appendLeadEvent(tenantScope, {
+            lead_id: handoff.lead_id,
+            event_type: 'DISPATCH_FAILED',
+            event_data: {
+              handoff_id: handoffId,
+              error: errorMsg,
+              retry_eligible: false,
+            },
+          });
+          return {
+            success: false,
+            dispatch_id: '',
+            channel: channelName,
+            status: 'FAILED',
+            delivered_at: new Date().toISOString(),
+            dry_run: false,
             error: errorMsg,
             retry_eligible: false,
-          },
-        });
-        return {
-          success: false,
-          dispatch_id: '',
-          channel: channelName,
-          status: 'FAILED',
-          delivered_at: new Date().toISOString(),
-          dry_run: false,
-          error: errorMsg,
-          retry_eligible: false,
-        };
-      }
+          };
+        }
+      } else if (enabledConfig.destination_type === 'WEBHOOK') {
+        // Missing endpoint URL
+        if (!enabledConfig.endpoint_url || !enabledConfig.endpoint_url.trim()) {
+          const errorMsg = 'CRM webhook endpoint is missing';
+          const channelName = enabledConfig.provider_name || 'WEBHOOK_SALES_CHANNEL';
+          await supabaseDataService.brokerHandoffs.updateDispatchStatus(
+            tenantScope,
+            handoffId,
+            'FAILED',
+            null,
+            channelName,
+            { error: errorMsg, retryEligible: false, lastAttemptAt: new Date().toISOString() }
+          );
+          await supabaseDataService.leadEvents.appendLeadEvent(tenantScope, {
+            lead_id: handoff.lead_id,
+            event_type: 'DISPATCH_FAILED',
+            event_data: {
+              handoff_id: handoffId,
+              error: errorMsg,
+              retry_eligible: false,
+            },
+          });
+          return {
+            success: false,
+            dispatch_id: '',
+            channel: channelName,
+            status: 'FAILED',
+            delivered_at: new Date().toISOString(),
+            dry_run: false,
+            error: errorMsg,
+            retry_eligible: false,
+          };
+        }
 
-      // 5. Structurally invalid endpoint URL
-      let isUrlValid = false;
-      try {
-        const parsed = new URL(enabledConfig.endpoint_url.trim());
-        isUrlValid = parsed.protocol === 'http:' || parsed.protocol === 'https:';
-      } catch {
-        isUrlValid = false;
-      }
-      if (!isUrlValid) {
-        const errorMsg = 'CRM webhook endpoint is invalid';
-        const channelName = enabledConfig.provider_name || 'WEBHOOK_SALES_CHANNEL';
-        await supabaseDataService.brokerHandoffs.updateDispatchStatus(
-          tenantScope,
-          handoffId,
-          'FAILED',
-          null,
-          channelName,
-          { error: errorMsg, retryEligible: false, lastAttemptAt: new Date().toISOString() }
-        );
-        await supabaseDataService.leadEvents.appendLeadEvent(tenantScope, {
-          lead_id: handoff.lead_id,
-          event_type: 'DISPATCH_FAILED',
-          event_data: {
-            handoff_id: handoffId,
+        // Structurally invalid endpoint URL
+        let isUrlValid = false;
+        try {
+          const parsed = new URL(enabledConfig.endpoint_url.trim());
+          isUrlValid = parsed.protocol === 'http:' || parsed.protocol === 'https:';
+        } catch {
+          isUrlValid = false;
+        }
+        if (!isUrlValid) {
+          const errorMsg = 'CRM webhook endpoint is invalid';
+          const channelName = enabledConfig.provider_name || 'WEBHOOK_SALES_CHANNEL';
+          await supabaseDataService.brokerHandoffs.updateDispatchStatus(
+            tenantScope,
+            handoffId,
+            'FAILED',
+            null,
+            channelName,
+            { error: errorMsg, retryEligible: false, lastAttemptAt: new Date().toISOString() }
+          );
+          await supabaseDataService.leadEvents.appendLeadEvent(tenantScope, {
+            lead_id: handoff.lead_id,
+            event_type: 'DISPATCH_FAILED',
+            event_data: {
+              handoff_id: handoffId,
+              error: errorMsg,
+              retry_eligible: false,
+            },
+          });
+          return {
+            success: false,
+            dispatch_id: '',
+            channel: channelName,
+            status: 'FAILED',
+            delivered_at: new Date().toISOString(),
+            dry_run: false,
             error: errorMsg,
             retry_eligible: false,
-          },
-        });
-        return {
-          success: false,
-          dispatch_id: '',
-          channel: channelName,
-          status: 'FAILED',
-          delivered_at: new Date().toISOString(),
-          dry_run: false,
-          error: errorMsg,
-          retry_eligible: false,
-        };
+          };
+        }
       }
     }
 
@@ -720,6 +758,16 @@ ${recAction}
           enabledConfig.endpoint_url.trim(),
           (enabledConfig.metadata as Record<string, unknown> | null) || null
         );
+      } else if (!actualDryRun && enabledConfig.destination_type === 'GOOGLE_SHEETS') {
+        const meta = (enabledConfig.metadata as Record<string, unknown> | null) || {};
+        const spreadsheetId = (meta.spreadsheet_id as string) || (enabledConfig.endpoint_url || '').trim();
+        const sheetName = (meta.sheet_name as string) || 'Qualified Leads';
+        const accessToken = (meta.access_token as string) || null;
+        dispatchChannel = new GoogleSheetsBrokerHandoffChannel({
+          spreadsheetId,
+          sheetName,
+          accessToken,
+        });
       } else {
         // dry-run explicitly requested or enabledConfig.dry_run_mode is true -> safe simulation
         dispatchChannel = this.defaultChannel;

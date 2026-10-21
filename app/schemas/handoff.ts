@@ -238,11 +238,17 @@ export interface HandoffQueueItem {
   created_at: string;
 }
 
+export type CrmDestinationType =
+  | 'WEBHOOK'
+  | 'GOOGLE_SHEETS'
+  | 'MOCK_SALES_CHANNEL'
+  | string;
+
 export interface CrmConfiguration {
   id: string; // UUID
   tenant_id: string; // UUID
   provider_name: string; // e.g., 'Salesforce', 'HubSpot', 'Custom'
-  destination_type: string; // e.g., 'WEBHOOK', 'API', 'MOCK_SALES_CHANNEL'
+  destination_type: CrmDestinationType;
   endpoint_url: string | null;
   is_enabled: boolean;
   dry_run_mode: boolean;
