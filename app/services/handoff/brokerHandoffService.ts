@@ -7,6 +7,7 @@
  * assigns deterministic CRM routing and SLA, handles idempotent delivery and audit logging.
  */
 
+import crypto from 'crypto';
 import {
   BrokerHandoffPackage,
   DbBrokerHandoff,
@@ -26,6 +27,7 @@ import { crmRouter } from './crmRouter';
 import { BrokerHandoffChannel, mockBrokerHandoffChannel, WebhookBrokerHandoffChannel } from './channels/brokerHandoffChannel';
 import { GoogleSheetsBrokerHandoffChannel } from './channels/googleSheetsChannel';
 import { projectMatchingService } from '../matching/projectMatchingService';
+import { logger } from '../security/logger';
 
 export class BrokerHandoffService {
   private defaultChannel: BrokerHandoffChannel;
@@ -503,7 +505,7 @@ ${recAction}
     // Server-side tenant-scoped lookup (do NOT bypass tenant boundaries with isPlatformAdmin: true)
     const configs = await supabaseDataService.crmConfigs.listConfigs({ tenantId, isPlatformAdmin: false });
     // Defense-in-depth: strictly enforce tenant ownership
-    const tenantConfigs = configs.filter((c: any) => c.tenant_id === tenantId);
+    const tenantConfigs = Array.isArray(configs) ? configs.filter((c: any) => c.tenant_id === tenantId) : [];
 
     const enabledConfigs = tenantConfigs
       .filter((c: any) => c.is_enabled)
@@ -512,29 +514,38 @@ ${recAction}
 
     const tenantScope = { tenantId, isPlatformAdmin: true };
 
-    // Check dispatch idempotency before dispatch execution
-    if (!forceRedispatch && (handoff.dispatch_status === 'SENT' || handoff.dispatch_status === 'ACKNOWLEDGED')) {
-      await supabaseDataService.leadEvents.appendLeadEvent(tenantScope, {
-        lead_id: handoff.lead_id,
-        event_type: 'DISPATCH_DUPLICATE',
-        event_data: {
-          handoff_id: handoffId,
-          existing_dispatch_id: handoff.dispatch_id,
-          existing_dispatch_status: handoff.dispatch_status,
-        },
-      });
-      return {
-        success: true,
-        dispatch_id: handoff.dispatch_id || `dup-${handoffId}`,
-        channel: handoff.dispatch_channel || (enabledConfig ? enabledConfig.provider_name : this.defaultChannel.channelName),
-        status: 'IGNORED_DUPLICATE',
-        delivered_at: handoff.updated_at,
-        dry_run: dryRun,
-        message: `Handoff ${handoffId} was already dispatched with status ${handoff.dispatch_status}. Duplicate ignored.`,
-      };
-    }
-
     const isProductionRequested = options.dryRun === false;
+
+    // Check dispatch idempotency before dispatch execution
+    const isPriorDryRun = Boolean(handoff.dispatch_id?.startsWith('dry-run-'));
+    if (!forceRedispatch && (handoff.dispatch_status === 'SENT' || handoff.dispatch_status === 'ACKNOWLEDGED')) {
+      if (isProductionRequested && isPriorDryRun) {
+        // DRY-RUN HARDENING: A prior simulated dry-run does NOT prevent a later authorized real dispatch!
+        logger.info(`Promoting prior dry-run handoff ${handoffId} to live production dispatch`, {
+          service: 'broker-dispatch',
+          data: { handoffId, priorDispatchId: handoff.dispatch_id }
+        });
+      } else {
+        await supabaseDataService.leadEvents.appendLeadEvent(tenantScope, {
+          lead_id: handoff.lead_id,
+          event_type: 'DISPATCH_DUPLICATE',
+          event_data: {
+            handoff_id: handoffId,
+            existing_dispatch_id: handoff.dispatch_id,
+            existing_dispatch_status: handoff.dispatch_status,
+          },
+        });
+        return {
+          success: true,
+          dispatch_id: handoff.dispatch_id || `dup-${handoffId}`,
+          channel: handoff.dispatch_channel || (enabledConfig ? enabledConfig.provider_name : this.defaultChannel.channelName),
+          status: 'IGNORED_DUPLICATE',
+          delivered_at: handoff.updated_at,
+          dry_run: dryRun,
+          message: `Handoff ${handoffId} was already dispatched with status ${handoff.dispatch_status}. Duplicate ignored.`,
+        };
+      }
+    }
 
     // PRODUCTION DISPATCH SAFETY CHECKS:
     // When production dispatch is requested (options.dryRun === false), we MUST NEVER silently fall back to Mock!
@@ -762,11 +773,13 @@ ${recAction}
         const meta = (enabledConfig.metadata as Record<string, unknown> | null) || {};
         const spreadsheetId = (meta.spreadsheet_id as string) || (enabledConfig.endpoint_url || '').trim();
         const sheetName = (meta.sheet_name as string) || 'Qualified Leads';
-        const accessToken = (meta.access_token as string) || null;
+        // SECURITY REQUIREMENT (Phase 13A.4.1):
+        // metadata.access_token is strictly rejected/ignored.
+        // GoogleSheetsBrokerHandoffChannel retrieves authorized credentials exclusively
+        // from server-side googleSheetsAuthService.
         dispatchChannel = new GoogleSheetsBrokerHandoffChannel({
           spreadsheetId,
           sheetName,
-          accessToken,
         });
       } else {
         // dry-run explicitly requested or enabledConfig.dry_run_mode is true -> safe simulation
@@ -799,25 +812,61 @@ ${recAction}
       }
 
       if (dispatchRes.success) {
-        await supabaseDataService.brokerHandoffs.updateDispatchStatus(
-          tenantScope,
-          handoffId,
-          'SENT',
-          dispatchRes.dispatch_id,
-          dispatchRes.channel,
-          { error: null, retryEligible: false, lastAttemptAt: new Date().toISOString() }
-        );
-        await supabaseDataService.brokerHandoffs.updateStatus(tenantScope, handoffId, 'DISPATCHED', 'ROUTED');
-        await supabaseDataService.leadEvents.appendLeadEvent(tenantScope, {
-          lead_id: handoff.lead_id,
-          event_type: 'DISPATCH_COMPLETED',
-          event_data: {
-            handoff_id: handoffId,
-            dispatch_id: dispatchRes.dispatch_id,
-            channel: dispatchRes.channel,
-            dry_run: actualDryRun,
-          },
-        });
+        if (!actualDryRun) {
+          // LIVE PRODUCTION DISPATCH:
+          // Genuinely delivered to external destination
+          await supabaseDataService.brokerHandoffs.updateDispatchStatus(
+            tenantScope,
+            handoffId,
+            'SENT',
+            dispatchRes.dispatch_id,
+            dispatchRes.channel,
+            { error: null, retryEligible: false, lastAttemptAt: new Date().toISOString() }
+          );
+          await supabaseDataService.brokerHandoffs.updateStatus(tenantScope, handoffId, 'DISPATCHED', 'ROUTED');
+          await supabaseDataService.leadEvents.appendLeadEvent(tenantScope, {
+            lead_id: handoff.lead_id,
+            event_type: 'DISPATCH_COMPLETED',
+            event_data: {
+              handoff_id: handoffId,
+              dispatch_id: dispatchRes.dispatch_id,
+              channel: dispatchRes.channel,
+              dry_run: false,
+              simulated: false,
+            },
+          });
+        } else {
+          // DRY-RUN SIMULATION (Phase 13A.4.1 Hardened Semantics):
+          // 1. Never claims real external delivery occurred in database.
+          // 2. Preserves handoff_status (does NOT set to DISPATCHED).
+          // 3. Sets dispatch_id with explicit 'dry-run-' prefix for audit distinction.
+          // 4. Does NOT prevent a later authorized live delivery.
+          // 5. Distinctly audited in lead_events with dry_run: true and simulated: true.
+          const isCallerDryRun = options.dryRun !== false;
+          const dryRunDispatchId = isCallerDryRun && !dispatchRes.dispatch_id?.startsWith('dry-run-')
+            ? `dry-run-${dispatchRes.dispatch_id || crypto.randomUUID()}`
+            : (dispatchRes.dispatch_id || crypto.randomUUID());
+          dispatchRes.dispatch_id = dryRunDispatchId;
+          await supabaseDataService.brokerHandoffs.updateDispatchStatus(
+            tenantScope,
+            handoffId,
+            'SENT',
+            dryRunDispatchId,
+            dispatchRes.channel,
+            { error: null, retryEligible: false, lastAttemptAt: new Date().toISOString() }
+          );
+          await supabaseDataService.leadEvents.appendLeadEvent(tenantScope, {
+            lead_id: handoff.lead_id,
+            event_type: 'DISPATCH_COMPLETED',
+            event_data: {
+              handoff_id: handoffId,
+              dispatch_id: dryRunDispatchId,
+              channel: dispatchRes.channel,
+              dry_run: true,
+              simulated: true,
+            },
+          });
+        }
       } else {
         const isRetryable = dispatchRes.retry_eligible !== undefined
           ? dispatchRes.retry_eligible

@@ -700,7 +700,7 @@ async function runPhase5FTestSuite() {
 
     const readBack = await supabaseDataService.brokerHandoffs.getHandoff(handoffRes.handoffId!);
     assert(readBack?.dispatch_status === 'SENT', 'DB record dispatch_status must be updated to SENT');
-    assert(readBack?.handoff_status === 'DISPATCHED', 'DB record handoff_status must be DISPATCHED');
+    assert(readBack?.handoff_status === 'READY' || readBack?.handoff_status === 'READY_WITH_MISSING_DATA', 'DB record handoff_status must not be DISPATCHED in dry-run mode');
   });
 
   // Test 12: Idempotent Dispatch Handling

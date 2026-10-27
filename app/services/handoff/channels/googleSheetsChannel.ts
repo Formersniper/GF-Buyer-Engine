@@ -21,6 +21,7 @@ import {
 } from '../../../schemas/handoff';
 import { BrokerHandoffChannel } from './brokerHandoffChannel';
 import { logger } from '../../security/logger';
+import { googleSheetsAuthService, GoogleSheetsAuthService } from '../googleSheetsAuthService';
 
 const GOOGLE_SHEETS_API_BASE = 'https://sheets.googleapis.com/v4/spreadsheets';
 const SPREADSHEET_ID_REGEX = /^[a-zA-Z0-9-_]{20,100}$/;
@@ -29,6 +30,7 @@ export interface GoogleSheetsChannelConfig {
   spreadsheetId: string;
   sheetName?: string;
   accessToken?: string | null;
+  authService?: GoogleSheetsAuthService;
 }
 
 /**
@@ -159,7 +161,8 @@ export class GoogleSheetsBrokerHandoffChannel implements BrokerHandoffChannel {
   public readonly channelName = 'GOOGLE_SHEETS_CHANNEL';
   private readonly spreadsheetId: string;
   private readonly sheetName: string;
-  private readonly accessToken: string | null;
+  private readonly staticAccessToken: string | null;
+  private readonly authService: GoogleSheetsAuthService;
   private readonly fetchImpl: typeof fetch;
 
   constructor(
@@ -176,7 +179,8 @@ export class GoogleSheetsBrokerHandoffChannel implements BrokerHandoffChannel {
 
     this.spreadsheetId = trimmedId;
     this.sheetName = (config.sheetName || 'Qualified Leads').trim();
-    this.accessToken = config.accessToken || process.env.GOOGLE_SHEETS_ACCESS_TOKEN || null;
+    this.staticAccessToken = config.accessToken !== undefined ? config.accessToken : (process.env.GOOGLE_SHEETS_ACCESS_TOKEN || null);
+    this.authService = config.authService || googleSheetsAuthService;
     this.fetchImpl = options?.fetchFn || fetch;
   }
 
@@ -201,23 +205,29 @@ export class GoogleSheetsBrokerHandoffChannel implements BrokerHandoffChannel {
       };
     }
 
-    // 2. Credential Verification
-    if (!this.accessToken) {
-      logger.error('Google Sheets dispatch rejected: Missing access token or service account credentials', {
-        service: 'google-sheets-dispatch',
-        operation: 'dispatch',
-        data: { spreadsheetId: this.spreadsheetId, sheetName: this.sheetName },
-      });
-      return {
-        success: false,
-        dispatch_id: dispatchId,
-        channel: this.channelName,
-        status: 'FAILED',
-        delivered_at: now,
-        dry_run: false,
-        error: 'Missing Google Sheets credentials',
-        retry_eligible: false,
-      };
+    // 2. Credential Verification / Server-Side Token Resolution
+    let token = this.staticAccessToken;
+    if (!token) {
+      try {
+        token = await this.authService.getAccessToken();
+      } catch (err: any) {
+        logger.error('Google Sheets dispatch rejected: Missing or invalid credentials', {
+          service: 'google-sheets-dispatch',
+          operation: 'dispatch',
+          data: { spreadsheetId: this.spreadsheetId, sheetName: this.sheetName, error: err.message },
+        });
+        const isNetwork = Boolean(err?.isNetworkError || err?.retry_eligible);
+        return {
+          success: false,
+          dispatch_id: dispatchId,
+          channel: this.channelName,
+          status: 'FAILED',
+          delivered_at: now,
+          dry_run: false,
+          error: err.message || 'Missing Google Sheets credentials',
+          retry_eligible: isNetwork,
+        };
+      }
     }
 
     // 3. Pre-append Idempotency Check (Read Column A)
@@ -229,7 +239,7 @@ export class GoogleSheetsBrokerHandoffChannel implements BrokerHandoffChannel {
       const readRes = await this.fetchImpl(readUrl, {
         method: 'GET',
         headers: {
-          Authorization: `Bearer ${this.accessToken}`,
+          Authorization: `Bearer ${token}`,
           Accept: 'application/json',
         },
       });
@@ -292,7 +302,7 @@ export class GoogleSheetsBrokerHandoffChannel implements BrokerHandoffChannel {
       const appendRes = await this.fetchImpl(appendUrl, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${this.accessToken}`,
+          Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
           Accept: 'application/json',
         },
@@ -326,7 +336,7 @@ export class GoogleSheetsBrokerHandoffChannel implements BrokerHandoffChannel {
       };
     } catch (err: any) {
       // 5. Ambiguous Append Outcome: Reconcile before flagging failure
-      const reconciled = await this.reconcileAmbiguousAppend(handoff.handoff_id);
+      const reconciled = await this.reconcileAmbiguousAppend(handoff.handoff_id, token);
       if (reconciled) {
         return {
           success: true,
@@ -355,14 +365,14 @@ export class GoogleSheetsBrokerHandoffChannel implements BrokerHandoffChannel {
   /**
    * Reconciles whether a row was appended despite a client-side socket/timeout exception.
    */
-  private async reconcileAmbiguousAppend(handoffId: string): Promise<boolean> {
+  private async reconcileAmbiguousAppend(handoffId: string, token: string): Promise<boolean> {
     try {
       const encodedSheet = encodeURIComponent(this.sheetName);
       const readUrl = `${GOOGLE_SHEETS_API_BASE}/${this.spreadsheetId}/values/${encodedSheet}!A:A`;
       const res = await this.fetchImpl(readUrl, {
         method: 'GET',
         headers: {
-          Authorization: `Bearer ${this.accessToken}`,
+          Authorization: `Bearer ${token}`,
           Accept: 'application/json',
         },
       });
