@@ -23,6 +23,8 @@ import {
   createServiceAccountJwt,
   GoogleSheetsAuthError,
   GoogleSheetsNetworkError,
+  GOOGLE_METADATA_TOKEN_ENDPOINT,
+  GOOGLE_SPREADSHEETS_SCOPE,
 } from '../app/services/handoff/googleSheetsAuthService';
 
 // Generate a valid RSA keypair for testing
@@ -437,8 +439,654 @@ async function runTestSuite() {
     );
   });
 
+  // ============================================================
+  // PHASE 13A.5.3 — KEYLESS GOOGLE CLOUD METADATA SERVER TESTS
+  // ============================================================
+
+  // 16. Valid metadata-server token acquisition with correct endpoint, headers, and redirect: 'error'
+  await test('Valid metadata-server token acquisition with correct endpoint, headers, and redirect error', async () => {
+    let capturedUrl = '';
+    let capturedHeaders: Record<string, string> = {};
+    let capturedRedirect = '';
+    let capturedMethod = '';
+
+    const mockFetch: typeof fetch = async (url, init) => {
+      capturedUrl = String(url);
+      capturedMethod = String(init?.method);
+      capturedRedirect = String(init?.redirect);
+      if (init?.headers) {
+        capturedHeaders = init.headers as Record<string, string>;
+      }
+      return new Response(
+        JSON.stringify({
+          access_token: 'valid-metadata-token-12345',
+          expires_in: 3600,
+          token_type: 'Bearer',
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    };
+
+    const auth = new GoogleSheetsAuthService({
+      authProvider: 'METADATA',
+      fetchFn: mockFetch,
+    });
+
+    const token = await auth.getAccessToken();
+    assert.strictEqual(token, 'valid-metadata-token-12345');
+    assert.strictEqual(capturedMethod, 'GET');
+    const expectedUrl = `${GOOGLE_METADATA_TOKEN_ENDPOINT}?scopes=${encodeURIComponent(GOOGLE_SPREADSHEETS_SCOPE)}`;
+    assert.strictEqual(capturedUrl, expectedUrl);
+    assert.strictEqual(capturedHeaders['Metadata-Flavor'], 'Google');
+    assert.strictEqual(capturedHeaders['Accept'], 'application/json');
+    assert.strictEqual(capturedRedirect, 'error', 'Must specify redirect: error');
+  });
+
+  // 17. Metadata server redirect response rejected
+  await test('Metadata server redirect response rejected', async () => {
+    const mockFetch: typeof fetch = async () => {
+      return new Response(null, {
+        status: 302,
+        headers: { Location: 'http://evil.attacker.com/token' },
+      });
+    };
+
+    const auth = new GoogleSheetsAuthService({
+      authProvider: 'METADATA',
+      fetchFn: mockFetch,
+    });
+
+    await assert.rejects(
+      async () => {
+        await auth.getAccessToken();
+      },
+      (err: any) => {
+        assert(err instanceof GoogleSheetsAuthError);
+        assert(err.message.includes('redirect rejected'), 'Error must cite redirect rejection');
+        return true;
+      }
+    );
+  });
+
+  // 18. Metadata server HTTP 404 / 403 error responses
+  await test('Metadata server HTTP 404 error classified as non-retryable GoogleSheetsAuthError', async () => {
+    const mockFetch: typeof fetch = async () => {
+      return new Response('Not Found', { status: 404, statusText: 'Not Found' });
+    };
+
+    const auth = new GoogleSheetsAuthService({
+      authProvider: 'METADATA',
+      fetchFn: mockFetch,
+    });
+
+    await assert.rejects(
+      async () => {
+        await auth.getAccessToken();
+      },
+      (err: any) => {
+        assert(err instanceof GoogleSheetsAuthError);
+        assert.strictEqual(err.retry_eligible, false);
+        return true;
+      }
+    );
+  });
+
+  // 19. Metadata server HTTP 500 error response
+  await test('Metadata server HTTP 500 error classified as retryable GoogleSheetsNetworkError', async () => {
+    const mockFetch: typeof fetch = async () => {
+      return new Response('Internal Server Error', { status: 500, statusText: 'Internal Error' });
+    };
+
+    const auth = new GoogleSheetsAuthService({
+      authProvider: 'METADATA',
+      fetchFn: mockFetch,
+    });
+
+    await assert.rejects(
+      async () => {
+        await auth.getAccessToken();
+      },
+      (err: any) => {
+        assert(err instanceof GoogleSheetsNetworkError);
+        assert.strictEqual(err.retry_eligible, true);
+        return true;
+      }
+    );
+  });
+
+  // 20. Metadata server network failure (connection error)
+  await test('Metadata server network connection failure classified as retryable GoogleSheetsNetworkError', async () => {
+    const mockFetch: typeof fetch = async () => {
+      throw new Error('connect ECONNREFUSED 169.254.169.254:80');
+    };
+
+    const auth = new GoogleSheetsAuthService({
+      authProvider: 'METADATA',
+      fetchFn: mockFetch,
+    });
+
+    await assert.rejects(
+      async () => {
+        await auth.getAccessToken();
+      },
+      (err: any) => {
+        assert(err instanceof GoogleSheetsNetworkError);
+        assert.strictEqual(err.retry_eligible, true);
+        return true;
+      }
+    );
+  });
+
+  // 21. Bounded timeout for metadata server requests
+  await test('Metadata server request timeout classified as retryable GoogleSheetsNetworkError', async () => {
+    const mockFetch: typeof fetch = (_url: any, init?: any): Promise<Response> => {
+      return new Promise<Response>((_, reject) => {
+        if (init?.signal) {
+          init.signal.addEventListener('abort', () => {
+            const abortErr = new Error('The operation was aborted');
+            abortErr.name = 'AbortError';
+            reject(abortErr);
+          });
+        }
+      });
+    };
+
+    const auth = new GoogleSheetsAuthService({
+      authProvider: 'METADATA',
+      fetchFn: mockFetch,
+      timeoutMs: 50,
+    });
+
+    await assert.rejects(
+      async () => {
+        await auth.getAccessToken();
+      },
+      (err: any) => {
+        assert(err instanceof GoogleSheetsNetworkError);
+        assert.strictEqual(err.retry_eligible, true);
+        assert(err.message.includes('timed out'));
+        return true;
+      }
+    );
+  });
+
+  // 22. Metadata server malformed JSON response
+  await test('Metadata server malformed JSON payload rejected cleanly', async () => {
+    const mockFetch: typeof fetch = async () => {
+      return new Response('<html>502 Bad Gateway</html>', {
+        status: 200,
+        headers: { 'Content-Type': 'text/html' },
+      });
+    };
+
+    const auth = new GoogleSheetsAuthService({
+      authProvider: 'METADATA',
+      fetchFn: mockFetch,
+    });
+
+    await assert.rejects(
+      async () => {
+        await auth.getAccessToken();
+      },
+      (err: any) => {
+        assert(err instanceof GoogleSheetsAuthError);
+        assert(err.message.includes('malformed JSON'));
+        return true;
+      }
+    );
+  });
+
+  // 23. Metadata server response missing access_token
+  await test('Metadata server response missing access_token rejected', async () => {
+    const mockFetch: typeof fetch = async () => {
+      return new Response(
+        JSON.stringify({
+          token_type: 'Bearer',
+          expires_in: 3600,
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    };
+
+    const auth = new GoogleSheetsAuthService({
+      authProvider: 'METADATA',
+      fetchFn: mockFetch,
+    });
+
+    await assert.rejects(
+      async () => {
+        await auth.getAccessToken();
+      },
+      (err: any) => {
+        assert(err instanceof GoogleSheetsAuthError);
+        assert(err.message.includes('missing access_token'));
+        return true;
+      }
+    );
+  });
+
+  // 24. Metadata server response with non-positive expires_in rejected
+  await test('Metadata server response with non-positive expires_in rejected', async () => {
+    const mockFetch: typeof fetch = async () => {
+      return new Response(
+        JSON.stringify({
+          access_token: 'meta-token-xyz',
+          expires_in: 0,
+          token_type: 'Bearer',
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    };
+
+    const auth = new GoogleSheetsAuthService({
+      authProvider: 'METADATA',
+      fetchFn: mockFetch,
+    });
+
+    await assert.rejects(
+      async () => {
+        await auth.getAccessToken();
+      },
+      (err: any) => {
+        assert(err instanceof GoogleSheetsAuthError);
+        assert(err.message.includes('expires_in'));
+        return true;
+      }
+    );
+  });
+
+  // 25. Keyless metadata token caching prevents duplicate calls
+  await test('Metadata token caching reuses active token within validity period', async () => {
+    let callCount = 0;
+    const mockFetch: typeof fetch = async () => {
+      callCount++;
+      return new Response(
+        JSON.stringify({
+          access_token: 'cached-meta-token-001',
+          expires_in: 3600,
+          token_type: 'Bearer',
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    };
+
+    let simulatedTime = 5000000;
+    const auth = new GoogleSheetsAuthService({
+      authProvider: 'METADATA',
+      fetchFn: mockFetch,
+      timeFn: () => simulatedTime,
+    });
+
+    const tok1 = await auth.getAccessToken();
+    const tok2 = await auth.getAccessToken();
+    assert.strictEqual(tok1, 'cached-meta-token-001');
+    assert.strictEqual(tok2, 'cached-meta-token-001');
+    assert.strictEqual(callCount, 1, 'Only 1 metadata server fetch should occur for cached token');
+  });
+
+  // 26. Keyless metadata token refresh triggers within expiry buffer
+  await test('Metadata token refreshes automatically when within expiry buffer', async () => {
+    let callCount = 0;
+    const mockFetch: typeof fetch = async () => {
+      callCount++;
+      return new Response(
+        JSON.stringify({
+          access_token: `refreshed-meta-token-${callCount}`,
+          expires_in: 3600,
+          token_type: 'Bearer',
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    };
+
+    let simulatedTime = 5000000;
+    const auth = new GoogleSheetsAuthService({
+      authProvider: 'METADATA',
+      fetchFn: mockFetch,
+      timeFn: () => simulatedTime,
+      expiryBufferMs: 300000, // 5 min
+    });
+
+    const tok1 = await auth.getAccessToken();
+    assert.strictEqual(tok1, 'refreshed-meta-token-1');
+    assert.strictEqual(callCount, 1);
+
+    // Advance time past 55 minutes (3600 - 300 = 3300s)
+    simulatedTime += 3301 * 1000;
+
+    const tok2 = await auth.getAccessToken();
+    assert.strictEqual(tok2, 'refreshed-meta-token-2');
+    assert.strictEqual(callCount, 2, 'Metadata token must refresh after expiry buffer');
+  });
+
+  // 27. Concurrent requests share single metadata in-flight exchange
+  await test('Concurrent requests share a single metadata token exchange promise', async () => {
+    let callCount = 0;
+    const mockFetch: typeof fetch = async () => {
+      callCount++;
+      await new Promise((r) => setTimeout(r, 40));
+      return new Response(
+        JSON.stringify({
+          access_token: 'concurrent-meta-token',
+          expires_in: 3600,
+          token_type: 'Bearer',
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    };
+
+    const auth = new GoogleSheetsAuthService({
+      authProvider: 'METADATA',
+      fetchFn: mockFetch,
+    });
+
+    const [t1, t2, t3] = await Promise.all([
+      auth.getAccessToken(),
+      auth.getAccessToken(),
+      auth.getAccessToken(),
+    ]);
+
+    assert.strictEqual(t1, 'concurrent-meta-token');
+    assert.strictEqual(t2, 'concurrent-meta-token');
+    assert.strictEqual(t3, 'concurrent-meta-token');
+    assert.strictEqual(callCount, 1, 'Concurrent metadata requests must deduplicate to 1 fetch');
+  });
+
+  // 28. Production keyless failure without private-key fallback
+  await test('Production keyless failure fails closed without private-key fallback', async () => {
+    const mockFetch: typeof fetch = async () => {
+      return new Response('Unauthorized', { status: 401, statusText: 'Unauthorized' });
+    };
+
+    const auth = new GoogleSheetsAuthService({
+      authProvider: 'METADATA',
+      fetchFn: mockFetch,
+      credentials: {
+        client_email: TEST_CLIENT_EMAIL,
+        private_key: testPrivateKeyPem,
+      },
+      nodeEnv: 'production',
+    });
+
+    await assert.rejects(
+      async () => {
+        await auth.getAccessToken();
+      },
+      (err: any) => {
+        assert(err instanceof GoogleSheetsAuthError);
+        assert(err.message.includes('Metadata server token request failed'), 'Must fail on metadata error, not fall back');
+        return true;
+      }
+    );
+  });
+
+  // 29. Invalid provider configuration rejected
+  await test('Invalid authProvider constructor option rejected cleanly', async () => {
+    assert.throws(
+      () => {
+        const auth = new GoogleSheetsAuthService({
+          authProvider: 'UNSUPPORTED' as any,
+        });
+        auth.resolveAuthProvider();
+      },
+      (err: any) => {
+        assert(err instanceof GoogleSheetsAuthError);
+        assert(err.message.includes('Invalid authProvider option'));
+        return true;
+      }
+    );
+  });
+
+  await test('Invalid GOOGLE_SHEETS_AUTH_PROVIDER environment variable rejected', async () => {
+    const saved = process.env.GOOGLE_SHEETS_AUTH_PROVIDER;
+    process.env.GOOGLE_SHEETS_AUTH_PROVIDER = 'INVALID_PROVIDER';
+    try {
+      const auth = new GoogleSheetsAuthService();
+      assert.throws(
+        () => {
+          auth.resolveAuthProvider();
+        },
+        (err: any) => {
+          assert(err instanceof GoogleSheetsAuthError);
+          assert(err.message.includes('Invalid GOOGLE_SHEETS_AUTH_PROVIDER'));
+          return true;
+        }
+      );
+    } finally {
+      if (saved !== undefined) {
+        process.env.GOOGLE_SHEETS_AUTH_PROVIDER = saved;
+      } else {
+        delete process.env.GOOGLE_SHEETS_AUTH_PROVIDER;
+      }
+    }
+  });
+
+  // 30. Non-GCP environment fails closed for keyless metadata
+  await test('Non-GCP environment without mock fetch fails safely for keyless metadata', async () => {
+    const savedKService = process.env.K_SERVICE;
+    const savedKRevision = process.env.K_REVISION;
+    const savedKConfig = process.env.K_CONFIGURATION;
+    const savedFunc = process.env.FUNCTION_TARGET;
+    delete process.env.K_SERVICE;
+    delete process.env.K_REVISION;
+    delete process.env.K_CONFIGURATION;
+    delete process.env.FUNCTION_TARGET;
+
+    try {
+      const auth = new GoogleSheetsAuthService({
+        authProvider: 'METADATA',
+        nodeEnv: 'production',
+      });
+      await assert.rejects(
+        async () => {
+          await auth.getAccessToken();
+        },
+        (err: any) => {
+          assert(err instanceof GoogleSheetsAuthError);
+          assert(err.message.includes('Google Cloud execution environments'));
+          return true;
+        }
+      );
+    } finally {
+      if (savedKService !== undefined) process.env.K_SERVICE = savedKService;
+      if (savedKRevision !== undefined) process.env.K_REVISION = savedKRevision;
+      if (savedKConfig !== undefined) process.env.K_CONFIGURATION = savedKConfig;
+      if (savedFunc !== undefined) process.env.FUNCTION_TARGET = savedFunc;
+    }
+  });
+
+  // 32. Test execution makes zero external network calls
+  await test('Test execution makes zero external network calls', async () => {
+    let reachedExternal = false;
+    const guardedFetch: typeof fetch = async (url) => {
+      const urlStr = String(url);
+      if (urlStr.includes('googleapis.com') || urlStr.includes('metadata.google.internal')) {
+        return new Response(
+          JSON.stringify({ access_token: 'guarded-token', expires_in: 3600, token_type: 'Bearer' }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      reachedExternal = true;
+      throw new Error(`Forbidden external network request attempted to: ${urlStr}`);
+    };
+
+    const auth = new GoogleSheetsAuthService({
+      authProvider: 'METADATA',
+      fetchFn: guardedFetch,
+    });
+    const tok = await auth.getAccessToken();
+    assert.strictEqual(tok, 'guarded-token');
+    assert.strictEqual(reachedExternal, false, 'No unmocked external network calls permitted');
+  });
+
+  // ============================================================
+  // PHASE 13A.5.3.2 — PRODUCTION PROVIDER FAIL-CLOSED HARDENING
+  // ============================================================
+
+  // 33. Production with missing GOOGLE_SHEETS_AUTH_PROVIDER
+  await test('Production with missing GOOGLE_SHEETS_AUTH_PROVIDER fails closed', async () => {
+    const saved = process.env.GOOGLE_SHEETS_AUTH_PROVIDER;
+    delete process.env.GOOGLE_SHEETS_AUTH_PROVIDER;
+    try {
+      const auth = new GoogleSheetsAuthService({ nodeEnv: 'production' });
+      assert.throws(
+        () => {
+          auth.resolveAuthProvider();
+        },
+        (err: any) => {
+          assert(err instanceof GoogleSheetsAuthError);
+          assert.strictEqual(err.retry_eligible, false);
+          assert(err.message.includes('must be explicitly configured in production'));
+          return true;
+        }
+      );
+    } finally {
+      if (saved !== undefined) process.env.GOOGLE_SHEETS_AUTH_PROVIDER = saved;
+      else delete process.env.GOOGLE_SHEETS_AUTH_PROVIDER;
+    }
+  });
+
+  // 34. Production with METADATA
+  await test('Production with explicitly configured METADATA resolves to METADATA', async () => {
+    const saved = process.env.GOOGLE_SHEETS_AUTH_PROVIDER;
+    process.env.GOOGLE_SHEETS_AUTH_PROVIDER = 'METADATA';
+    try {
+      const auth = new GoogleSheetsAuthService({ nodeEnv: 'production' });
+      const provider = auth.resolveAuthProvider();
+      assert.strictEqual(provider, 'METADATA');
+    } finally {
+      if (saved !== undefined) process.env.GOOGLE_SHEETS_AUTH_PROVIDER = saved;
+      else delete process.env.GOOGLE_SHEETS_AUTH_PROVIDER;
+    }
+  });
+
+  // 35. Production with SERVICE_ACCOUNT_KEY
+  await test('Production with SERVICE_ACCOUNT_KEY throws and fails closed', async () => {
+    const saved = process.env.GOOGLE_SHEETS_AUTH_PROVIDER;
+    process.env.GOOGLE_SHEETS_AUTH_PROVIDER = 'SERVICE_ACCOUNT_KEY';
+    try {
+      const auth = new GoogleSheetsAuthService({ nodeEnv: 'production' });
+      assert.throws(
+        () => {
+          auth.resolveAuthProvider();
+        },
+        (err: any) => {
+          assert(err instanceof GoogleSheetsAuthError);
+          assert.strictEqual(err.retry_eligible, false);
+          assert(err.message.includes('Provider SERVICE_ACCOUNT_KEY is prohibited in production'));
+          return true;
+        }
+      );
+    } finally {
+      if (saved !== undefined) process.env.GOOGLE_SHEETS_AUTH_PROVIDER = saved;
+      else delete process.env.GOOGLE_SHEETS_AUTH_PROVIDER;
+    }
+
+    // Also assert constructor option SERVICE_ACCOUNT_KEY throws in production
+    assert.throws(
+      () => {
+        const auth = new GoogleSheetsAuthService({
+          authProvider: 'SERVICE_ACCOUNT_KEY',
+          nodeEnv: 'production',
+        });
+        auth.resolveAuthProvider();
+      },
+      (err: any) => {
+        assert(err instanceof GoogleSheetsAuthError);
+        assert(err.message.includes('prohibited in production'));
+        return true;
+      }
+    );
+  });
+
+  // 36. Production with invalid provider
+  await test('Production with invalid provider throws typed GoogleSheetsAuthError', async () => {
+    const saved = process.env.GOOGLE_SHEETS_AUTH_PROVIDER;
+    process.env.GOOGLE_SHEETS_AUTH_PROVIDER = 'UNSUPPORTED_IAM';
+    try {
+      const auth = new GoogleSheetsAuthService({ nodeEnv: 'production' });
+      assert.throws(
+        () => {
+          auth.resolveAuthProvider();
+        },
+        (err: any) => {
+          assert(err instanceof GoogleSheetsAuthError);
+          assert(err.message.includes('Invalid GOOGLE_SHEETS_AUTH_PROVIDER'));
+          return true;
+        }
+      );
+    } finally {
+      if (saved !== undefined) process.env.GOOGLE_SHEETS_AUTH_PROVIDER = saved;
+      else delete process.env.GOOGLE_SHEETS_AUTH_PROVIDER;
+    }
+  });
+
+  // 37. Local development with explicitly configured SERVICE_ACCOUNT_KEY
+  await test('Local development with explicitly configured SERVICE_ACCOUNT_KEY returns SERVICE_ACCOUNT_KEY', async () => {
+    const saved = process.env.GOOGLE_SHEETS_AUTH_PROVIDER;
+    process.env.GOOGLE_SHEETS_AUTH_PROVIDER = 'SERVICE_ACCOUNT_KEY';
+    try {
+      const auth = new GoogleSheetsAuthService({ nodeEnv: 'development' });
+      const provider = auth.resolveAuthProvider();
+      assert.strictEqual(provider, 'SERVICE_ACCOUNT_KEY');
+    } finally {
+      if (saved !== undefined) process.env.GOOGLE_SHEETS_AUTH_PROVIDER = saved;
+      else delete process.env.GOOGLE_SHEETS_AUTH_PROVIDER;
+    }
+  });
+
+  // 38. Injected mock provider behavior
+  await test('Injected mock provider behavior is preserved in test harnesses', async () => {
+    const mockFetch: typeof fetch = async () => {
+      return new Response(
+        JSON.stringify({ access_token: 'injected-mock-token', expires_in: 3600, token_type: 'Bearer' }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    };
+    const auth = new GoogleSheetsAuthService({
+      fetchFn: mockFetch,
+      credentials: {
+        client_email: TEST_CLIENT_EMAIL,
+        private_key: testPrivateKeyPem,
+      },
+      nodeEnv: 'test',
+    });
+    const provider = auth.resolveAuthProvider();
+    assert.strictEqual(provider, 'SERVICE_ACCOUNT_KEY');
+    const token = await auth.getAccessToken();
+    assert.strictEqual(token, 'injected-mock-token');
+  });
+
+  // 39. METADATA failure without fallback
+  await test('METADATA failure in production fails closed without private-key or static fallback', async () => {
+    const mockFetch: typeof fetch = async () => {
+      return new Response('Not Found', { status: 404, statusText: 'Not Found' });
+    };
+    const auth = new GoogleSheetsAuthService({
+      authProvider: 'METADATA',
+      nodeEnv: 'production',
+      fetchFn: mockFetch,
+      credentials: {
+        client_email: TEST_CLIENT_EMAIL,
+        private_key: testPrivateKeyPem,
+      },
+      staticToken: 'should-never-be-used',
+    });
+    await assert.rejects(
+      async () => {
+        await auth.getAccessToken();
+      },
+      (err: any) => {
+        assert(err instanceof GoogleSheetsAuthError);
+        assert(err.message.includes('Metadata server token request failed'));
+        return true;
+      }
+    );
+    assert.strictEqual(auth.getCachedTokenEntry(), null, 'Failed metadata must not cache fallback token');
+  });
+
   console.log('============================================================');
-  console.log(`PHASE 13A.4.1 / 13A.5.1 AUTH TEST RESULTS: ${passed} / ${total} PASSED (100% GREEN)`);
+  console.log(`PHASE 13A.4.1 / 13A.5.1 / 13A.5.3 / 13A.5.3.2 AUTH TEST RESULTS: ${passed} / ${total} PASSED (100% GREEN)`);
   console.log('============================================================\n');
 }
 

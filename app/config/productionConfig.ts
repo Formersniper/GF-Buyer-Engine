@@ -487,6 +487,46 @@ export const ENV_INVENTORY: Record<string, EnvVarDefinition> = {
     description: 'Time-to-live for idempotency records in seconds',
     allowedInBrowser: false,
   },
+  GOOGLE_SHEETS_AUTH_PROVIDER: {
+    name: 'GOOGLE_SHEETS_AUTH_PROVIDER',
+    classification: 'SERVER_ONLY',
+    requiredInProduction: false,
+    sensitive: false,
+    description: 'Google Sheets authentication provider: "METADATA" (default on Cloud Run) or "SERVICE_ACCOUNT_KEY"',
+    allowedInBrowser: false,
+  },
+  GOOGLE_SHEETS_SERVICE_ACCOUNT_KEY: {
+    name: 'GOOGLE_SHEETS_SERVICE_ACCOUNT_KEY',
+    classification: 'SECRET',
+    requiredInProduction: false,
+    sensitive: true,
+    description: 'Google Sheets service account full JSON key string (local dev only)',
+    allowedInBrowser: false,
+  },
+  GOOGLE_SHEETS_CLIENT_EMAIL: {
+    name: 'GOOGLE_SHEETS_CLIENT_EMAIL',
+    classification: 'SERVER_ONLY',
+    requiredInProduction: false,
+    sensitive: false,
+    description: 'Google Sheets service account client email address',
+    allowedInBrowser: false,
+  },
+  GOOGLE_SHEETS_PRIVATE_KEY: {
+    name: 'GOOGLE_SHEETS_PRIVATE_KEY',
+    classification: 'SECRET',
+    requiredInProduction: false,
+    sensitive: true,
+    description: 'Google Sheets service account RSA private key in PEM format (local dev only)',
+    allowedInBrowser: false,
+  },
+  GOOGLE_SHEETS_ACCESS_TOKEN: {
+    name: 'GOOGLE_SHEETS_ACCESS_TOKEN',
+    classification: 'SECRET',
+    requiredInProduction: false,
+    sensitive: true,
+    description: 'Static Google Sheets access token for non-production testing (strictly prohibited in production)',
+    allowedInBrowser: false,
+  },
 };
 
 // ==========================================
@@ -759,6 +799,20 @@ export function validateProductionConfig(
     // Non-production checks / warnings
     if (env.ENABLE_DEBUG_LOGS === 'true') {
       warnings.push('Debug logging is active in non-production mode.');
+    }
+  }
+
+  // Validate GOOGLE_SHEETS_AUTH_PROVIDER if provided
+  const sheetsAuthProvider = env.GOOGLE_SHEETS_AUTH_PROVIDER?.trim().toUpperCase();
+  if (sheetsAuthProvider) {
+    if (effectiveEnv === 'production') {
+      if (sheetsAuthProvider === 'SERVICE_ACCOUNT_KEY') {
+        errors.push('GOOGLE_SHEETS_AUTH_PROVIDER="SERVICE_ACCOUNT_KEY" is prohibited in production. Only "METADATA" is supported for Cloud Run deployment.');
+      } else if (sheetsAuthProvider !== 'METADATA') {
+        errors.push(`Invalid GOOGLE_SHEETS_AUTH_PROVIDER: "${env.GOOGLE_SHEETS_AUTH_PROVIDER}". Only "METADATA" is supported in production.`);
+      }
+    } else if (sheetsAuthProvider !== 'METADATA' && sheetsAuthProvider !== 'SERVICE_ACCOUNT_KEY') {
+      errors.push(`Invalid GOOGLE_SHEETS_AUTH_PROVIDER: "${env.GOOGLE_SHEETS_AUTH_PROVIDER}". Must be "METADATA" or "SERVICE_ACCOUNT_KEY".`);
     }
   }
 

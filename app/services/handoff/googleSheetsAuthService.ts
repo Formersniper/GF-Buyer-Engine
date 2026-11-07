@@ -20,8 +20,13 @@ import crypto from 'crypto';
 import { logger } from '../security/logger';
 
 const GOOGLE_OAUTH_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
-const GOOGLE_SPREADSHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
+export const GOOGLE_SPREADSHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
+export const GOOGLE_METADATA_TOKEN_ENDPOINT =
+  'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token';
 const DEFAULT_EXPIRY_BUFFER_MS = 5 * 60 * 1000; // 5 minutes buffer
+const DEFAULT_METADATA_TIMEOUT_MS = 5000; // 5 seconds bounded timeout
+
+export type GoogleSheetsAuthProvider = 'METADATA' | 'SERVICE_ACCOUNT_KEY';
 
 export class GoogleSheetsAuthError extends Error {
   public readonly isAuthError = true;
@@ -56,9 +61,12 @@ export interface GoogleSheetsAuthOptions {
   fetchFn?: typeof fetch;
   timeFn?: () => number;
   expiryBufferMs?: number;
+  timeoutMs?: number;
   credentials?: ServiceAccountCredentials | null;
   staticToken?: string | null;
   nodeEnv?: string;
+  authProvider?: GoogleSheetsAuthProvider;
+  runtimeServiceAccount?: string;
 }
 
 function base64url(buf: Buffer): string {
@@ -122,20 +130,28 @@ export class GoogleSheetsAuthService {
 
   private readonly tokenEndpoint: string;
   private readonly fetchImpl: typeof fetch;
+  private readonly isMockFetch: boolean;
   private readonly timeImpl: () => number;
   private readonly expiryBufferMs: number;
+  private readonly timeoutMs: number;
   private readonly explicitCredentials?: ServiceAccountCredentials | null;
   private readonly explicitStaticToken?: string | null;
   private readonly nodeEnv?: string;
+  private readonly explicitAuthProvider?: GoogleSheetsAuthProvider;
+  private readonly runtimeServiceAccount?: string;
 
   constructor(options?: GoogleSheetsAuthOptions) {
     this.tokenEndpoint = options?.tokenEndpoint || GOOGLE_OAUTH_TOKEN_ENDPOINT;
     this.fetchImpl = options?.fetchFn || fetch;
+    this.isMockFetch = Boolean(options?.fetchFn);
     this.timeImpl = options?.timeFn || (() => Date.now());
     this.expiryBufferMs = options?.expiryBufferMs !== undefined ? options.expiryBufferMs : DEFAULT_EXPIRY_BUFFER_MS;
+    this.timeoutMs = options?.timeoutMs !== undefined ? options.timeoutMs : DEFAULT_METADATA_TIMEOUT_MS;
     this.explicitCredentials = options?.credentials;
     this.explicitStaticToken = options?.staticToken;
     this.nodeEnv = options?.nodeEnv;
+    this.explicitAuthProvider = options?.authProvider;
+    this.runtimeServiceAccount = options?.runtimeServiceAccount;
   }
 
   public clearCache(): void {
@@ -211,38 +227,206 @@ export class GoogleSheetsAuthService {
     }
   }
 
-  private async executeTokenAcquisition(nowMs: number): Promise<string> {
+  /**
+   * Resolves the authentication provider to use (METADATA or SERVICE_ACCOUNT_KEY).
+   * In production (Cloud Run), METADATA must be explicitly configured; SERVICE_ACCOUNT_KEY is prohibited.
+   */
+  public resolveAuthProvider(): GoogleSheetsAuthProvider {
     const isProduction = (this.nodeEnv || process.env.NODE_ENV) === 'production';
 
-    // Check for static token in options or environment (used for tests/mock tokens)
-    const staticToken = this.explicitStaticToken !== undefined
-      ? this.explicitStaticToken
-      : process.env.GOOGLE_SHEETS_ACCESS_TOKEN?.trim() || null;
-
-    const creds = this.resolveCredentials();
-
-    if (!creds && staticToken) {
-      if (isProduction) {
-        logger.error('Google Sheets authentication rejected: static access token fallback is strictly prohibited in production', {
-          service: 'google-sheets-auth',
-          operation: 'executeTokenAcquisition',
-        });
+    // 1. Explicit constructor authProvider option
+    if (this.explicitAuthProvider !== undefined) {
+      if (this.explicitAuthProvider !== 'METADATA' && this.explicitAuthProvider !== 'SERVICE_ACCOUNT_KEY') {
         throw new GoogleSheetsAuthError(
-          'Google Sheets authentication failed: Static access token fallback is strictly prohibited in production. Configured server-side service-account credentials are required.'
+          `Invalid authProvider option: "${String(this.explicitAuthProvider)}". Supported providers: METADATA, SERVICE_ACCOUNT_KEY`
         );
       }
-      // Use static token with 1-hour cache in non-production/test only
-      this.cachedToken = {
-        token: staticToken,
-        expiresAtMs: nowMs + 3600 * 1000,
-      };
-      return staticToken;
+      if (isProduction && this.explicitAuthProvider === 'SERVICE_ACCOUNT_KEY') {
+        throw new GoogleSheetsAuthError(
+          'Google Sheets authentication failed: Provider SERVICE_ACCOUNT_KEY is prohibited in production. The only accepted production provider for Cloud Run deployment is METADATA.'
+        );
+      }
+      return this.explicitAuthProvider;
     }
+
+    // 2. Injected test provider / mock test harness behavior:
+    // If mock fetcher and explicit credentials or explicit static token were injected via constructor in tests
+    if (this.isMockFetch && this.explicitCredentials && !process.env.GOOGLE_SHEETS_AUTH_PROVIDER) {
+      return 'SERVICE_ACCOUNT_KEY';
+    }
+
+    // 3. Environment-based provider resolution
+    const rawEnv = process.env.GOOGLE_SHEETS_AUTH_PROVIDER;
+    const envProvider = rawEnv?.trim().toUpperCase();
+
+    if (!envProvider) {
+      if (isProduction) {
+        throw new GoogleSheetsAuthError(
+          'Google Sheets authentication failed: Server-side authentication credentials and GOOGLE_SHEETS_AUTH_PROVIDER must be explicitly configured in production. The only accepted production provider for Cloud Run deployment is METADATA.'
+        );
+      }
+      // In local development/test, default to SERVICE_ACCOUNT_KEY
+      return 'SERVICE_ACCOUNT_KEY';
+    }
+
+    if (envProvider === 'METADATA' || envProvider === 'GCP_METADATA' || envProvider === 'KEYLESS') {
+      return 'METADATA';
+    }
+
+    if (envProvider === 'SERVICE_ACCOUNT_KEY' || envProvider === 'PRIVATE_KEY') {
+      if (isProduction) {
+        throw new GoogleSheetsAuthError(
+          'Google Sheets authentication failed: Provider SERVICE_ACCOUNT_KEY is prohibited in production. The only accepted production provider for Cloud Run deployment is METADATA.'
+        );
+      }
+      return 'SERVICE_ACCOUNT_KEY';
+    }
+
+    throw new GoogleSheetsAuthError(
+      `Invalid GOOGLE_SHEETS_AUTH_PROVIDER: "${rawEnv}". Supported providers: METADATA, SERVICE_ACCOUNT_KEY`
+    );
+  }
+
+  /**
+   * Acquires a token keylessly from the Google Cloud metadata server.
+   * Fixed endpoint: http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token
+   * Fails closed without falling back to private keys or static tokens.
+   */
+  private async acquireMetadataToken(nowMs: number): Promise<string> {
+    const isProduction = (this.nodeEnv || process.env.NODE_ENV) === 'production';
+    const isGcpEnvironment = Boolean(
+      process.env.K_SERVICE ||
+      process.env.FUNCTION_TARGET ||
+      process.env.K_REVISION
+    );
+
+    // In automated tests or non-production, unmocked metadata server calls are strictly prohibited
+    if (!this.isMockFetch && !isProduction) {
+      throw new GoogleSheetsAuthError(
+        'Metadata-server access is strictly prohibited outside production runtime. Automated tests must inject a mock fetch implementation.'
+      );
+    }
+
+    if (!this.isMockFetch && !isGcpEnvironment) {
+      logger.error('Google Sheets keyless metadata authentication rejected: unsupported runtime', {
+        service: 'google-sheets-auth',
+        operation: 'acquireMetadataToken',
+      });
+      throw new GoogleSheetsAuthError(
+        'Google Sheets keyless metadata authentication is only supported in Google Cloud execution environments (Cloud Run). Runtime service-account credentials are required.'
+      );
+    }
+
+    const expectedSa = this.runtimeServiceAccount || process.env.GOOGLE_SHEETS_RUNTIME_SERVICE_ACCOUNT?.trim();
+    if (expectedSa && process.env.K_SERVICE) {
+      logger.info('Using configured Cloud Run runtime service account for Google Sheets authentication', {
+        service: 'google-sheets-auth',
+        operation: 'acquireMetadataToken',
+        data: { expectedServiceAccount: expectedSa },
+      });
+    }
+
+    // Fixed metadata endpoint with URL-encoded spreadsheets scope
+    const metadataUrl = `${GOOGLE_METADATA_TOKEN_ENDPOINT}?scopes=${encodeURIComponent(GOOGLE_SPREADSHEETS_SCOPE)}`;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+    }, this.timeoutMs);
+
+    let res: Response;
+    try {
+      res = await this.fetchImpl(metadataUrl, {
+        method: 'GET',
+        headers: {
+          'Metadata-Flavor': 'Google',
+          Accept: 'application/json',
+        },
+        redirect: 'error',
+        signal: controller.signal,
+      });
+    } catch (err: any) {
+      const isTimeout = err?.name === 'AbortError' || controller.signal.aborted;
+      logger.warn('Google Sheets metadata server request failed', {
+        service: 'google-sheets-auth',
+        operation: 'acquireMetadataToken',
+        data: { error: isTimeout ? 'Metadata server request timed out' : (err.message || 'Connection error') },
+      });
+      if (isTimeout) {
+        throw new GoogleSheetsNetworkError(`Metadata server request timed out after ${this.timeoutMs}ms`);
+      }
+      throw new GoogleSheetsNetworkError(`Metadata server network failure: ${err.message || 'Connection error'}`);
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
+    if (res.status >= 300 && res.status < 400) {
+      throw new GoogleSheetsAuthError(`Metadata server response redirect rejected (HTTP ${res.status})`);
+    }
+
+    if (!res.ok) {
+      let errorDetail = '';
+      try {
+        const text = await res.text();
+        errorDetail = text.slice(0, 200);
+      } catch {
+        errorDetail = res.statusText;
+      }
+
+      logger.error('Google Sheets metadata server rejected token request', {
+        service: 'google-sheets-auth',
+        operation: 'acquireMetadataToken',
+        data: { status: res.status, errorDetail },
+      });
+
+      if (res.status >= 500 || res.status === 429) {
+        throw new GoogleSheetsNetworkError(`Metadata server temporarily unavailable (HTTP ${res.status}): ${errorDetail}`);
+      }
+      throw new GoogleSheetsAuthError(`Metadata server token request failed (HTTP ${res.status}): ${errorDetail}`);
+    }
+
+    let data: any;
+    try {
+      data = await res.json();
+    } catch {
+      throw new GoogleSheetsAuthError('Metadata server returned malformed JSON');
+    }
+
+    if (!data || typeof data !== 'object') {
+      throw new GoogleSheetsAuthError('Metadata server returned invalid token payload');
+    }
+
+    if (!data.access_token || typeof data.access_token !== 'string' || data.access_token.trim() === '') {
+      throw new GoogleSheetsAuthError('Metadata server response missing access_token');
+    }
+
+    if (data.token_type !== undefined && (typeof data.token_type !== 'string' || data.token_type.toLowerCase() !== 'bearer')) {
+      throw new GoogleSheetsAuthError(`Metadata server returned unexpected token_type: ${data.token_type}`);
+    }
+
+    if (typeof data.expires_in !== 'number' || !Number.isFinite(data.expires_in) || data.expires_in <= 0) {
+      throw new GoogleSheetsAuthError('Metadata server response missing or non-positive expires_in');
+    }
+
+    const expiresAtMs = nowMs + data.expires_in * 1000;
+    this.cachedToken = {
+      token: data.access_token,
+      expiresAtMs,
+    };
+
+    return data.access_token;
+  }
+
+  /**
+   * Acquires a token via RS256 self-signed JWT exchange (local dev / legacy private key).
+   */
+  private async acquireServiceAccountToken(nowMs: number, isProduction: boolean): Promise<string> {
+    const creds = this.resolveCredentials();
 
     if (!creds) {
       logger.error('Google Sheets authentication failed: missing credentials', {
         service: 'google-sheets-auth',
-        operation: 'executeTokenAcquisition',
+        operation: 'acquireServiceAccountToken',
       });
       throw new GoogleSheetsAuthError(
         isProduction
@@ -274,7 +458,7 @@ export class GoogleSheetsAuthService {
     } catch (err: any) {
       logger.warn('Google Sheets token endpoint network failure', {
         service: 'google-sheets-auth',
-        operation: 'executeTokenAcquisition',
+        operation: 'acquireServiceAccountToken',
         data: { error: err.message },
       });
       throw new GoogleSheetsNetworkError(`OAuth token endpoint network failure: ${err.message || 'Connection error'}`);
@@ -293,7 +477,7 @@ export class GoogleSheetsAuthService {
 
       logger.error('Google Sheets token exchange rejected', {
         service: 'google-sheets-auth',
-        operation: 'executeTokenAcquisition',
+        operation: 'acquireServiceAccountToken',
         data: { status: res.status, errorDetail },
       });
 
@@ -318,6 +502,44 @@ export class GoogleSheetsAuthService {
     };
 
     return data.access_token;
+  }
+
+  private async executeTokenAcquisition(nowMs: number): Promise<string> {
+    const isProduction = (this.nodeEnv || process.env.NODE_ENV) === 'production';
+
+    // Check for static token in options or environment (used for tests/mock tokens)
+    const staticToken = this.explicitStaticToken !== undefined
+      ? this.explicitStaticToken
+      : process.env.GOOGLE_SHEETS_ACCESS_TOKEN?.trim() || null;
+
+    if (isProduction && staticToken && !this.explicitCredentials) {
+      logger.error('Google Sheets authentication rejected: static access token fallback is strictly prohibited in production', {
+        service: 'google-sheets-auth',
+        operation: 'executeTokenAcquisition',
+      });
+      throw new GoogleSheetsAuthError(
+        'Google Sheets authentication failed: Static access token fallback is strictly prohibited in production. Configured server-side service-account credentials are required.'
+      );
+    }
+
+    const provider = this.resolveAuthProvider();
+
+    // 1. KEYLESS METADATA PROVIDER: Fails closed without falling back
+    if (provider === 'METADATA') {
+      return this.acquireMetadataToken(nowMs);
+    }
+
+    // 2. STATIC TOKEN: Only in non-production when no credentials and no explicit key requested
+    if (!isProduction && staticToken && !this.explicitCredentials && !process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_KEY && !process.env.GOOGLE_SHEETS_PRIVATE_KEY) {
+      this.cachedToken = {
+        token: staticToken,
+        expiresAtMs: nowMs + 3600 * 1000,
+      };
+      return staticToken;
+    }
+
+    // 3. SERVICE ACCOUNT PRIVATE KEY PROVIDER
+    return this.acquireServiceAccountToken(nowMs, isProduction);
   }
 }
 
